@@ -1,3 +1,5 @@
+import knex, { type Knex } from 'knex';
+
 export interface DbConfig {
   host: string;
   port: number;
@@ -15,6 +17,26 @@ export function getDbConfig(): DbConfig {
     database: process.env.DB_NAME ?? '',
   };
 }
+
+/**
+ * Create a Knex instance from the standard DB env vars.
+ * Call once at service startup and pass to repositories.
+ */
+export function createKnex(): Knex {
+  const cfg = getDbConfig();
+  return knex({
+    client: 'pg',
+    connection: {
+      host: cfg.host,
+      port: cfg.port,
+      user: cfg.user,
+      password: cfg.password,
+      database: cfg.database,
+    },
+  });
+}
+
+export type { Knex };
 
 export function getConfig<T = string>(key: string, defaultValue?: T): T | string | undefined {
   const value = process.env[key];

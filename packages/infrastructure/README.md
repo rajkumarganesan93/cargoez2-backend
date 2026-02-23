@@ -14,6 +14,7 @@ npm install @rajkumarganesan93/infrastructure
 
 | Export              | Type       | Purpose                                    |
 | ------------------- | ---------- | ------------------------------------------ |
+| `BaseRepository`    | class      | Generic Knex-powered repo implementing IRepository |
 | `AppError`          | class      | Base operational error (supports MessageCode) |
 | `BadRequestError`   | class      | 400 Bad Request                            |
 | `UnauthorizedError` | class      | 401 Unauthorized                           |
@@ -24,6 +25,54 @@ npm install @rajkumarganesan93/infrastructure
 | `ErrorHandlerOptions` | interface | Config for errorHandler                  |
 
 ## Usage
+
+### BaseRepository (Knex-powered generic repository)
+
+`BaseRepository` implements all 9 `IRepository` methods using Knex and the `ColumnMap` system. Service-specific repositories extend it with just configuration — no raw SQL needed.
+
+```typescript
+import type { Knex } from 'knex';
+import type { ColumnMap } from '@rajkumarganesan93/domain';
+import { BaseRepository } from '@rajkumarganesan93/infrastructure';
+
+const COLUMN_MAP: ColumnMap = {
+  id: 'id', name: 'name', email: 'email',
+  isActive: 'is_active', createdAt: 'created_at',
+  modifiedAt: 'modified_at', createdBy: 'created_by',
+  modifiedBy: 'modified_by', tenantId: 'tenant_id',
+};
+
+export class UserRepository
+  extends BaseRepository<User, CreateUserInput, UpdateUserInput>
+  implements IUserRepository
+{
+  constructor(knex: Knex) {
+    super(knex, 'users', COLUMN_MAP, ['name', 'email']);
+  }
+}
+```
+
+**Constructor parameters:**
+
+| Parameter       | Type       | Purpose                                               |
+| --------------- | ---------- | ----------------------------------------------------- |
+| `knex`          | `Knex`     | Knex instance (from `createKnex()`)                   |
+| `table`         | `string`   | Database table name                                   |
+| `columnMap`     | `ColumnMap`| Maps entity properties (camelCase) to DB columns      |
+| `writableFields`| `string[]` | Entity properties that are user-writable              |
+
+**For complex queries** (JOINs, transactions), access the protected `this.knex` instance directly:
+
+```typescript
+export class OrderRepository extends BaseRepository<...> {
+  async getOrdersWithItems(userId: string) {
+    return this.knex('orders')
+      .join('order_items', 'orders.id', 'order_items.order_id')
+      .where('orders.user_id', userId)
+      .select('orders.*', 'order_items.quantity');
+  }
+}
+```
 
 ### Throwing errors with MessageCode (recommended)
 
@@ -89,11 +138,13 @@ app.use(errorHandler({ logger }));
 ```
 
 The `errorHandler` middleware:
-- Logs 5xx errors at `error` level, 4xx at `warn` level
-- If the error has a `messageCode`, builds a structured response with `messageCode` + resolved message
-- If the error has no `messageCode`, falls back to the raw error message
-- For unrecognized errors (non-AppError), responds with `MessageCode.INTERNAL_ERROR`
-- Includes stack trace only in non-production environments
+- **JSON parse errors** — malformed request bodies return 400 with `messageCode: BAD_REQUEST`
+- **PayloadTooLarge** — oversized bodies return 413
+- **AppError with MessageCode** — structured response with `messageCode` + resolved message
+- **AppError without MessageCode** — falls back to the raw error message
+- **Unrecognized errors** — responds with `MessageCode.INTERNAL_ERROR`
+- Logs 5xx at `error` level, 4xx at `warn` level
+- Stack traces included only in non-production environments
 
 ### Error response examples
 
@@ -119,6 +170,8 @@ The `errorHandler` middleware:
 
 ## Dependencies
 
-- `@rajkumarganesan93/application` — logger types
+- `@rajkumarganesan93/application` — logger, EntityMapper (toEntity)
+- `@rajkumarganesan93/domain` — IRepository, ColumnMap, pagination types
 - `@rajkumarganesan93/api` — MessageCode, error response builder
+- `knex` — SQL query builder for BaseRepository
 - `express` (peer) — middleware types

@@ -1,7 +1,9 @@
 import { Pool } from 'pg';
-import { getDbConfig } from '@rajkumarganesan93/shared';
+import { getDbConfig, createKnex } from '@rajkumarganesan93/shared';
+import type { Knex } from 'knex';
 
 let _pool: Pool | undefined;
+let _knex: Knex | undefined;
 
 export function getPool(): Pool {
   if (!_pool) {
@@ -15,4 +17,11 @@ export function getPool(): Pool {
     });
   }
   return _pool;
+}
+
+export function getKnex(): Knex {
+  if (!_knex) {
+    _knex = createKnex();
+  }
+  return _knex;
 }

@@ -1,6 +1,6 @@
 {
   "name": "@rajkumarganesan93/infrastructure",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
@@ -10,9 +10,10 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@rajkumarganesan93/application": "*",
     "@rajkumarganesan93/api": "*",
-    "@rajkumarganesan93/domain": "*"
+    "@rajkumarganesan93/application": "*",
+    "@rajkumarganesan93/domain": "*",
+    "knex": "^3.1.0"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

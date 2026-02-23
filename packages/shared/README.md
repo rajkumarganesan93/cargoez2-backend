@@ -15,11 +15,13 @@ npm install @rajkumarganesan93/shared
 | Export              | Type     | Purpose                                        |
 | ------------------- | -------- | ---------------------------------------------- |
 | `getDbConfig()`     | function | Read DB_HOST, DB_PORT, etc. from process.env   |
+| `createKnex()`      | function | Create a Knex instance from the standard DB env vars |
 | `getConfig(key, default?)` | function | Read any env variable with fallback     |
 | `asyncHandler(fn)`  | function | Wrap async Express handlers (auto-catches)     |
 | `healthCheck()`     | function | Returns `{ status: 'ok', timestamp: '...' }`   |
 | `parsePaginationFromQuery(query, config?)` | function | Parse and validate pagination from Express query params |
 | `DbConfig`          | interface| Shape of database connection config             |
+| `Knex`              | type     | Re-exported Knex type for convenience           |
 | `AsyncRequestHandler` | type  | Typed async Express handler signature           |
 | `PaginationConfig`  | interface| Configuration for parsePaginationFromQuery      |
 
@@ -57,7 +59,30 @@ const result = await getAllUseCase.execute({ pagination });
 
 If `allowedSortFields` is provided and the client sends an unknown `sortBy`, it falls back to `defaultSortBy`. If `allowedSortFields` is not provided, any `sortBy` value is accepted.
 
-### Database connection
+### Database connection (Knex — recommended)
+
+```typescript
+import { createKnex } from '@rajkumarganesan93/shared';
+import type { Knex } from '@rajkumarganesan93/shared';
+
+let _knex: Knex | undefined;
+
+export function getKnex(): Knex {
+  if (!_knex) _knex = createKnex();
+  return _knex;
+}
+```
+
+`createKnex()` reads from the standard DB env vars:
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD=secret
+DB_NAME=my_service_db
+```
+
+### Database connection (raw pg Pool — legacy)
 
 ```typescript
 import { Pool } from 'pg';
@@ -71,15 +96,6 @@ export const pool = new Pool({
   password: config.password,
   database: config.database,
 });
-```
-
-This reads from `.env`:
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=secret
-DB_NAME=my_service_db
 ```
 
 ### Async handler
@@ -106,4 +122,5 @@ const secret = getConfig('JWT_SECRET');
 
 - `@rajkumarganesan93/domain` -- PaginationRequest type
 - `dotenv` -- loads `.env` into process.env
+- `knex` -- SQL query builder
 - `express` (peer) -- handler types

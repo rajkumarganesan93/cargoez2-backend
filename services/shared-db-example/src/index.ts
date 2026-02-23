@@ -14,6 +14,7 @@ import { swaggerSpec } from './presentation/swagger.js';
 import { createCountryRoutes } from './presentation/routes.js';
 import { CountryController } from './presentation/controllers/CountryController.js';
 import { CountryRepository } from './infrastructure/repositories/CountryRepository.js';
+import { getKnex } from './infrastructure/db.js';
 import { CreateCountryUseCase } from './application/use-cases/CreateCountryUseCase.js';
 import { GetAllCountriesUseCase } from './application/use-cases/GetAllCountriesUseCase.js';
 import { GetCountryByIdUseCase } from './application/use-cases/GetCountryByIdUseCase.js';
@@ -23,7 +24,7 @@ import { DeleteCountryUseCase } from './application/use-cases/DeleteCountryUseCa
 const logger = createLogger('shared-db-example');
 const PORT = process.env.PORT ?? 3005;
 
-const countryRepository = new CountryRepository();
+const countryRepository = new CountryRepository(getKnex());
 const createCountryUseCase = new CreateCountryUseCase(countryRepository);
 const getAllCountriesUseCase = new GetAllCountriesUseCase(countryRepository);
 const getCountryByIdUseCase = new GetCountryByIdUseCase(countryRepository);
