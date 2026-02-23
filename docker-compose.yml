@@ -1,0 +1,50 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cargoez-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-dbs.sh:/docker-entrypoint-initdb.d/init-dbs.sh
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    context: .
+    dockerfile: services/user-service/Dockerfile
+    container_name: cargoez-user-service
+    env_file: ./services/user-service/.env
+    environment:
+      DB_HOST: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - '3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  auth-service:
+    context: .
+    dockerfile: services/auth-service/Dockerfile
+    container_name: cargoez-auth-service
+    env_file: ./services/auth-service/.env
+    environment:
+      DB_HOST: postgres
+      DB_PASSWORD: postgres
+    ports:
+      - '3003:3003'
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data: {}

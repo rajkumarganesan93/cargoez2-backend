@@ -1,0 +1,39 @@
+{
+  "name": "@cargoez-be/user-service",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "lint": "eslint src tests",
+    "test": "npx jest",
+    "migrate": "node dist/run-migrations.js"
+  },
+  "dependencies": {
+    "@cargoez2/api": "*",
+    "@cargoez2/application": "*",
+    "@cargoez2/domain": "*",
+    "@cargoez2/infrastructure": "*",
+    "@cargoez2/shared": "*",
+    "dotenv": "^16.4.5",
+    "express": "^4.18.2",
+    "pg": "^8.11.3",
+    "swagger-ui-express": "^5.0.0"
+  },
+  "devDependencies": {
+    "@swc/core": "^1.15.11",
+    "@swc/jest": "^0.2.39",
+    "@types/express": "^4.17.21",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.11.16",
+    "@types/pg": "^8.16.0",
+    "@types/supertest": "^6.0.2",
+    "@types/swagger-ui-express": "^4.1.8",
+    "jest": "^30.2.0",
+    "supertest": "^6.3.4",
+    "tsx": "^4.21.0",
+    "typescript": "^5.3.3"
+  }
+}

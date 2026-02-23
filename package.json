@@ -1,0 +1,38 @@
+{
+  "name": "cargoez-be",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js microservices with PostgreSQL and Clean Architecture",
+  "workspaces": [
+    "packages/*",
+    "services/user-service",
+    "services/auth-service"
+  ],
+  "scripts": {
+    "build": "npm run build:packages && npm run build -w @cargoez-be/user-service -w @cargoez-be/auth-service",
+    "build:packages": "npm run build -w @cargoez2/domain && npm run build -w @cargoez2/shared && npm run build -w @cargoez2/api && npm run build -w @cargoez2/application && npm run build -w @cargoez2/infrastructure && npm run build -w @cargoez2/integrations",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
+    "test": "npm run test --workspaces --if-present",
+    "migrate:user": "npm run build -w @cargoez-be/user-service && npm run migrate -w @cargoez-be/user-service",
+    "migrate:auth": "npm run build -w @cargoez-be/auth-service && npm run migrate -w @cargoez-be/auth-service",
+    "migrate:all": "npm run migrate:user && npm run migrate:auth",
+    "publish:packages": "npm run build:packages && npm publish -w @cargoez2/domain && npm publish -w @cargoez2/shared && npm publish -w @cargoez2/api && npm publish -w @cargoez2/application && npm publish -w @cargoez2/infrastructure && npm publish -w @cargoez2/integrations"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.56.0",
+    "@typescript-eslint/parser": "^8.56.0",
+    "eslint": "^10.0.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.2.5",
+    "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "ajv": "8.18.0",
+    "minimatch": "10.2.1"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
