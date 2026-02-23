@@ -43,13 +43,14 @@ const mockRepo: IUserRepository = {
   },
   save: async (input: { name: string; email: string }) => {
     const id = crypto.randomUUID();
+    const now = new Date().toISOString();
     const user: User = {
       id,
       name: input.name,
       email: input.email,
       isActive: true,
-      createdAt: new Date(),
-      modifiedAt: new Date(),
+      createdAt: now,
+      modifiedAt: now,
     };
     mockUsers.set(id, user);
     return user;
@@ -59,11 +60,16 @@ const mockRepo: IUserRepository = {
     if (!user) return null;
     if (input.name !== undefined) user.name = input.name;
     if (input.email !== undefined) user.email = input.email;
-    user.modifiedAt = new Date();
+    user.modifiedAt = new Date().toISOString();
     mockUsers.set(id, user);
     return user;
   },
-  delete: async (id: string) => mockUsers.delete(id),
+  delete: async (id: string) => {
+    const user = mockUsers.get(id);
+    if (!user || !user.isActive) return false;
+    user.isActive = false;
+    return true;
+  },
   count: async (criteria?: Record<string, unknown>) => {
     if (!criteria || Object.keys(criteria).length === 0) return mockUsers.size;
     return Array.from(mockUsers.values()).filter((user) => {
@@ -142,7 +148,7 @@ describe('User Service', () => {
     expect(updateRes.body.data.name).toBe('New Name');
   });
 
-  it('DELETE /users/:id removes user with messageCode DELETED', async () => {
+  it('DELETE /users/:id soft-deletes user with messageCode DELETED', async () => {
     const createRes = await request(app)
       .post('/users')
       .send({ name: 'To Delete', email: 'del@example.com' });
@@ -153,9 +159,8 @@ describe('User Service', () => {
     expect(delRes.body.messageCode).toBe('DELETED');
     expect(delRes.body.message).toBe('User deleted successfully');
     const getRes = await request(app).get(`/users/${id}`);
-    expect(getRes.status).toBe(404);
-    expect(getRes.body.success).toBe(false);
-    expect(getRes.body.messageCode).toBe('NOT_FOUND');
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.data.isActive).toBe(false);
   });
 
   it('GET /users returns all users with pagination and messageCode', async () => {

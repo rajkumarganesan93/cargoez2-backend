@@ -37,9 +37,11 @@ export function resolveMessage(
   let message = entry.message;
   if (params) {
     for (const [key, value] of Object.entries(params)) {
-      message = message.replace(new RegExp(`\\{${key}\\}`, 'g'), String(value));
+      message = message.replaceAll(`{${key}}`, String(value));
     }
   }
 
-  return { messageCode: code, status: entry.status, message };
+  message = message.replace(/\{[^}]+\}/g, '');
+
+  return { messageCode: code, status: entry.status, message: message.trim() };
 }

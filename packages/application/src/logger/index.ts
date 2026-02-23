@@ -11,7 +11,10 @@ const opts: pino.LoggerOptions = {
   },
 };
 
-const rootLogger = (pino as unknown as (opts: pino.LoggerOptions) => pino.Logger)(opts);
+// pino's ESM default export is callable at runtime but TypeScript's NodeNext
+// resolution doesn't reflect it in the type declarations, requiring this cast.
+const createPino = pino as unknown as (opts: pino.LoggerOptions) => pino.Logger;
+const rootLogger = createPino(opts);
 
 /**
  * Create a child logger with service/context binding.

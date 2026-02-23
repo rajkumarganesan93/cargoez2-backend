@@ -18,6 +18,7 @@ npm install @rajkumarganesan93/infrastructure
 | `AppError`          | class      | Base operational error (supports MessageCode) |
 | `BadRequestError`   | class      | 400 Bad Request                            |
 | `UnauthorizedError` | class      | 401 Unauthorized                           |
+| `ForbiddenError`    | class      | 403 Forbidden                              |
 | `NotFoundError`     | class      | 404 Not Found                              |
 | `ConflictError`     | class      | 409 Conflict                               |
 | `errorHandler`      | middleware | Express error handler (logs + JSON response) |
@@ -60,6 +61,8 @@ export class UserRepository
 | `table`         | `string`   | Database table name                                   |
 | `columnMap`     | `ColumnMap`| Maps entity properties (camelCase) to DB columns      |
 | `writableFields`| `string[]` | Entity properties that are user-writable              |
+
+**Note:** `delete()` performs a soft-delete (sets `is_active=false`). `mapCriteria` throws on unknown criteria keys.
 
 **For complex queries** (JOINs, transactions), access the protected `this.knex` instance directly:
 
@@ -141,7 +144,7 @@ The `errorHandler` middleware:
 - **JSON parse errors** — malformed request bodies return 400 with `messageCode: BAD_REQUEST`
 - **PayloadTooLarge** — oversized bodies return 413
 - **AppError with MessageCode** — structured response with `messageCode` + resolved message
-- **AppError without MessageCode** — falls back to the raw error message
+- **AppError without MessageCode** — for statusCode ≥ 500, returns generic `INTERNAL_ERROR` (no raw message leak); otherwise falls back to the raw error message
 - **Unrecognized errors** — responds with `MessageCode.INTERNAL_ERROR`
 - Logs 5xx at `error` level, 4xx at `warn` level
 - Stack traces included only in non-production environments
@@ -170,8 +173,9 @@ The `errorHandler` middleware:
 
 ## Dependencies
 
-- `@rajkumarganesan93/application` — logger, EntityMapper (toEntity)
+- `@rajkumarganesan93/application` — logger, EntityMapper (toEntity); no longer depends on `@rajkumarganesan93/shared`
 - `@rajkumarganesan93/domain` — IRepository, ColumnMap, pagination types
 - `@rajkumarganesan93/api` — MessageCode, error response builder
 - `knex` — SQL query builder for BaseRepository
 - `express` (peer) — middleware types
+- `pino` (peer) — request logging

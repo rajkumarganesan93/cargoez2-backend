@@ -43,13 +43,14 @@ const mockRepo: ICountryRepository = {
   },
   save: async (input: { code: string; name: string }) => {
     const id = crypto.randomUUID();
+    const now = new Date().toISOString();
     const country: Country = {
       id,
       code: input.code,
       name: input.name,
       isActive: true,
-      createdAt: new Date(),
-      modifiedAt: new Date(),
+      createdAt: now,
+      modifiedAt: now,
     };
     mockCountries.set(id, country);
     return country;
@@ -59,11 +60,16 @@ const mockRepo: ICountryRepository = {
     if (!country) return null;
     if (input.code !== undefined) country.code = input.code;
     if (input.name !== undefined) country.name = input.name;
-    country.modifiedAt = new Date();
+    country.modifiedAt = new Date().toISOString();
     mockCountries.set(id, country);
     return country;
   },
-  delete: async (id: string) => mockCountries.delete(id),
+  delete: async (id: string) => {
+    const country = mockCountries.get(id);
+    if (!country || !country.isActive) return false;
+    country.isActive = false;
+    return true;
+  },
   count: async (criteria?: Record<string, unknown>) => {
     if (!criteria || Object.keys(criteria).length === 0) return mockCountries.size;
     return Array.from(mockCountries.values()).filter((country) => {
@@ -138,7 +144,7 @@ describe('Shared DB Example - Country Service', () => {
     expect(updateRes.body.data.name).toBe('United Kingdom');
   });
 
-  it('DELETE /countries/:id removes country with messageCode DELETED', async () => {
+  it('DELETE /countries/:id soft-deletes country with messageCode DELETED', async () => {
     const createRes = await request(app)
       .post('/countries')
       .send({ code: 'FR', name: 'France' });
@@ -148,8 +154,8 @@ describe('Shared DB Example - Country Service', () => {
     expect(delRes.body.messageCode).toBe('DELETED');
     expect(delRes.body.message).toBe('Country deleted successfully');
     const getRes = await request(app).get(`/countries/${id}`);
-    expect(getRes.status).toBe(404);
-    expect(getRes.body.messageCode).toBe('NOT_FOUND');
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.data.isActive).toBe(false);
   });
 
   it('GET /countries returns all countries with pagination and messageCode', async () => {

@@ -4,18 +4,25 @@ import type pino from 'pino';
 export function requestLogger(logger: pino.Logger) {
   return (req: Request, res: Response, next: NextFunction): void => {
     const start = Date.now();
-    res.on('finish', () => {
+    let logged = false;
+
+    const logRequest = (aborted = false) => {
+      if (logged) return;
+      logged = true;
       const duration = Date.now() - start;
-      logger.info(
-        {
-          method: req.method,
-          path: req.path,
-          status: res.statusCode,
-          durationMs: duration,
-        },
-        `${req.method} ${req.path} ${res.statusCode} ${duration}ms`
-      );
-    });
+      const meta = {
+        method: req.method,
+        path: req.path,
+        status: res.statusCode,
+        durationMs: duration,
+        ...(aborted && { aborted: true }),
+      };
+      logger.info(meta, `${req.method} ${req.path} ${res.statusCode} ${duration}ms`);
+    };
+
+    res.on('finish', () => logRequest(false));
+    res.on('close', () => logRequest(!res.writableFinished));
+
     next();
   };
 }

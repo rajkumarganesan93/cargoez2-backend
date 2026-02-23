@@ -1,12 +1,7 @@
 import { ConflictError } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
-import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
+import type { IUserRepository, CreateUserInput } from '../../domain/repositories/IUserRepository.js';
 import type { User } from '../../domain/entities/User.js';
-
-export interface CreateUserInput {
-  name: string;
-  email: string;
-}
 
 export class CreateUserUseCase {
   constructor(private readonly userRepository: IUserRepository) {}

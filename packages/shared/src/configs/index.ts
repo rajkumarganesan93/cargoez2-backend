@@ -9,13 +9,21 @@ export interface DbConfig {
 }
 
 export function getDbConfig(): DbConfig {
-  return {
-    host: process.env.DB_HOST ?? 'localhost',
-    port: parseInt(process.env.DB_PORT ?? '5432', 10),
-    user: process.env.DB_USER ?? '',
-    password: process.env.DB_PASSWORD ?? '',
-    database: process.env.DB_NAME ?? '',
-  };
+  const host = process.env.DB_HOST ?? 'localhost';
+  const user = process.env.DB_USER;
+  const password = process.env.DB_PASSWORD;
+  const database = process.env.DB_NAME;
+
+  if (!user) throw new Error('Missing required env var: DB_USER');
+  if (!password) throw new Error('Missing required env var: DB_PASSWORD');
+  if (!database) throw new Error('Missing required env var: DB_NAME');
+
+  const port = parseInt(process.env.DB_PORT ?? '5432', 10);
+  if (Number.isNaN(port)) {
+    throw new Error(`Invalid DB_PORT: "${process.env.DB_PORT}" is not a number`);
+  }
+
+  return { host, port, user, password, database };
 }
 
 /**
@@ -33,13 +41,16 @@ export function createKnex(): Knex {
       password: cfg.password,
       database: cfg.database,
     },
+    pool: { min: 2, max: 10 },
   });
 }
 
 export type { Knex };
 
-export function getConfig<T = string>(key: string, defaultValue?: T): T | string | undefined {
-  const value = process.env[key];
-  if (value === undefined) return defaultValue as T | undefined;
-  return value as T | string;
+/**
+ * Read a config value from environment variables.
+ * Always returns `string | undefined` -- callers must parse/convert as needed.
+ */
+export function getConfig(key: string, defaultValue?: string): string | undefined {
+  return process.env[key] ?? defaultValue;
 }

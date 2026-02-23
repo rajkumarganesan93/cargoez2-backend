@@ -9,6 +9,7 @@ import { toEntity } from '@rajkumarganesan93/application';
 
 /**
  * Generic repository that implements all 9 IRepository methods using Knex.
+ * Uses PostgreSQL-specific features (RETURNING *).
  *
  * Subclass usage:
  * ```
@@ -19,7 +20,10 @@ import { toEntity } from '@rajkumarganesan93/application';
  * }
  * ```
  *
- * For complex queries (JOINs, transactions), access `this.knex` directly.
+ * - `delete()` performs a **soft delete** (sets `is_active = false`).
+ * - `findAll()` returns only active records.
+ * - `findById()` returns any record (including inactive) for admin lookups.
+ * - For complex queries (JOINs, transactions), access `this.knex` directly.
  */
 export class BaseRepository<
   T,
@@ -51,14 +55,20 @@ export class BaseRepository<
 
   /**
    * Map entity-keyed criteria to DB-column-keyed criteria.
-   * Keys not present in the ColumnMap are silently ignored (security).
+   * Throws if a key is not in the ColumnMap to prevent silent empty queries from typos.
    */
   private mapCriteria(criteria: Record<string, unknown>): Record<string, unknown> {
     const mapped: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(criteria)) {
       if (value === undefined) continue;
       const colName = this.columnMap[key];
-      if (colName) mapped[colName] = value;
+      if (!colName) {
+        throw new Error(
+          `Unknown criteria key "${key}" for table "${this.table}". ` +
+          `Valid keys: ${Object.keys(this.columnMap).join(', ')}`,
+        );
+      }
+      mapped[colName] = value;
     }
     return mapped;
   }
@@ -83,7 +93,7 @@ export class BaseRepository<
   }
 
   /**
-   * Resolve sortBy to a safe column name. Falls back to created_at
+   * Resolve sortBy to a safe column name. Falls back to the createdAt column
    * if the property is not in the ColumnMap.
    */
   private safeSortCol(sortBy?: string): string {
@@ -91,25 +101,31 @@ export class BaseRepository<
     return this.columnMap[sortBy] ? this.columnMap[sortBy] : this.col('createdAt');
   }
 
+  /** Enforce minimum 1 and maximum 100 on limit. */
+  private safeLimit(raw?: number): number {
+    return Math.min(Math.max(1, raw ?? 20), 100);
+  }
+
   async findById(id: string): Promise<T | null> {
-    const row = await this.knex(this.table).where('id', id).first();
+    const row = await this.knex(this.table).where(this.col('id'), id).first();
     return row ? this.rowToEntity(row) : null;
   }
 
   async findAll(options?: ListOptions): Promise<PaginatedResult<T>> {
-    const page = options?.pagination?.page ?? 1;
-    const limit = Math.min(options?.pagination?.limit ?? 20, 100);
+    const page = Math.max(1, options?.pagination?.page ?? 1);
+    const limit = this.safeLimit(options?.pagination?.limit);
     const offset = (page - 1) * limit;
     const sortCol = this.safeSortCol(options?.pagination?.sortBy);
     const sortDir = options?.pagination?.sortOrder ?? 'asc';
+    const activeCol = this.col('isActive');
 
     const [{ count }] = await this.knex(this.table)
-      .where(this.col('isActive'), true)
+      .where(activeCol, true)
       .count('* as count');
     const total = Number(count);
 
     const rows = await this.knex(this.table)
-      .where(this.col('isActive'), true)
+      .where(activeCol, true)
       .orderBy(sortCol, sortDir)
       .limit(limit)
       .offset(offset);
@@ -129,8 +145,8 @@ export class BaseRepository<
     criteria: Record<string, unknown>,
     options?: ListOptions,
   ): Promise<PaginatedResult<T>> {
-    const page = options?.pagination?.page ?? 1;
-    const limit = Math.min(options?.pagination?.limit ?? 20, 100);
+    const page = Math.max(1, options?.pagination?.page ?? 1);
+    const limit = this.safeLimit(options?.pagination?.limit);
     const offset = (page - 1) * limit;
     const sortCol = this.safeSortCol(options?.pagination?.sortBy);
     const sortDir = options?.pagination?.sortOrder ?? 'asc';
@@ -162,17 +178,33 @@ export class BaseRepository<
   async update(id: string, input: UpdateInput): Promise<T | null> {
     const mapped = this.mapInput(input);
     if (Object.keys(mapped).length === 0) return this.findById(id);
-    mapped[this.col('modifiedAt')] = this.knex.fn.now();
+
+    const modifiedAtCol = this.columnMap['modifiedAt'];
+    if (modifiedAtCol) {
+      mapped[modifiedAtCol] = this.knex.fn.now();
+    }
 
     const rows = await this.knex(this.table)
-      .where('id', id)
+      .where(this.col('id'), id)
       .update(mapped)
       .returning('*');
     return rows[0] ? this.rowToEntity(rows[0]) : null;
   }
 
+  /** Soft delete: sets `is_active = false` instead of removing the row. */
   async delete(id: string): Promise<boolean> {
-    const count = await this.knex(this.table).where('id', id).del();
+    const updateData: Record<string, unknown> = {
+      [this.col('isActive')]: false,
+    };
+    const modifiedAtCol = this.columnMap['modifiedAt'];
+    if (modifiedAtCol) {
+      updateData[modifiedAtCol] = this.knex.fn.now();
+    }
+
+    const count = await this.knex(this.table)
+      .where(this.col('id'), id)
+      .where(this.col('isActive'), true)
+      .update(updateData);
     return count > 0;
   }
 
@@ -180,6 +212,8 @@ export class BaseRepository<
     const q = this.knex(this.table);
     if (criteria && Object.keys(criteria).length > 0) {
       q.where(this.mapCriteria(criteria));
+    } else {
+      q.where(this.col('isActive'), true);
     }
     const [{ count }] = await q.count('* as count');
     return Number(count);

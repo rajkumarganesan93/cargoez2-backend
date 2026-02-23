@@ -27,9 +27,9 @@ cargoez2-backend/
 @rajkumarganesan93/shared        → domain
 @rajkumarganesan93/domain        (no deps)
 @rajkumarganesan93/api           → domain
-@rajkumarganesan93/application   → domain, shared
+@rajkumarganesan93/application   → domain
 @rajkumarganesan93/infrastructure → application, api, domain
-@rajkumarganesan93/integrations  → shared
+@rajkumarganesan93/integrations  (no deps)
 ```
 
 ### Clean Architecture layers (per service)
@@ -47,7 +47,7 @@ Presentation    → controllers, routes (with Swagger JSDoc), swagger.ts
 
 ### Prerequisites
 
-- Node.js >= 18
+- Node.js >= 18.7.0
 - PostgreSQL (localhost:5432)
 - npm
 
@@ -151,6 +151,7 @@ export interface Product extends BaseEntity {
   sku: string;
   price: number;
 }
+// BaseEntity provides id, isActive, createdAt, modifiedAt (ISO 8601 strings), createdBy, modifiedBy, tenantId
 ```
 
 ### Step 2: Define repository interface
@@ -177,16 +178,16 @@ export interface IProductRepository extends IRepository<Product, CreateProductIn
 | `findMany` | `(criteria, options?) => PaginatedResult<T>` | Filtered paginated list |
 | `save` | `(input) => T` | Create a new record |
 | `update` | `(id, input) => T \| null` | Update by ID |
-| `delete` | `(id) => boolean` | Delete by ID |
+| `delete` | `(id) => boolean` | Soft-delete by ID (sets isActive=false) |
 | `count` | `(criteria?) => number` | Count matching records |
 | `exists` | `(criteria) => boolean` | Check if any record matches |
 
 ### Step 3: Implement repository
 
-Implement all 9 methods. Use an `ALLOWED_COLUMNS` allowlist to prevent SQL injection when building WHERE clauses from criteria keys.
+Implement all 9 methods. Prefer extending `BaseRepository` (uses Knex, throws on unknown criteria keys). Use an `ALLOWED_COLUMNS` allowlist when building WHERE clauses from criteria keys. Note: `delete()` performs a soft-delete (sets `isActive=false`), not a hard delete.
 
 ```typescript
-import { pool } from '../db.js';
+import { getKnex } from '../db.js';
 import { toEntity } from '@rajkumarganesan93/application';
 import type { IProductRepository } from '../../domain/repositories/IProductRepository.js';
 
@@ -357,7 +358,7 @@ All APIs return a consistent JSON structure with a `messageCode` field for progr
   "success": true,
   "messageCode": "CREATED",
   "message": "User created successfully",
-  "data": { "id": "...", "name": "..." },
+  "data": { "id": "...", "name": "...", "isActive": true, "modifiedAt": "2026-02-23T10:00:00.000Z" },
   "timestamp": "2026-02-23T10:00:00.000Z"
 }
 

@@ -48,6 +48,23 @@ app.use(createUserRoutes(userController));
 app.use((_req, _res, next) => next(new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Route' })));
 app.use(errorHandler({ logger }));
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info({ port: PORT }, `User service listening on port ${PORT}`);
 });
+
+function gracefulShutdown(signal: string) {
+  logger.info(`Received ${signal}, shutting down gracefully`);
+  server.close(async () => {
+    try {
+      await getKnex().destroy();
+      logger.info('Database connections closed');
+    } catch (err) {
+      logger.error({ err }, 'Error closing database connections');
+    }
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(1), 10_000);
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

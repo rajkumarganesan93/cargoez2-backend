@@ -1,12 +1,7 @@
 import { ConflictError } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
-import type { ICountryRepository } from '../../domain/repositories/ICountryRepository.js';
+import type { ICountryRepository, CreateCountryInput } from '../../domain/repositories/ICountryRepository.js';
 import type { Country } from '../../domain/entities/Country.js';
-
-export interface CreateCountryInput {
-  code: string;
-  name: string;
-}
 
 export class CreateCountryUseCase {
   constructor(private readonly countryRepository: ICountryRepository) {}

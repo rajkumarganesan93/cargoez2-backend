@@ -14,9 +14,9 @@ npm install @rajkumarganesan93/shared
 
 | Export              | Type     | Purpose                                        |
 | ------------------- | -------- | ---------------------------------------------- |
-| `getDbConfig()`     | function | Read DB_HOST, DB_PORT, etc. from process.env   |
+| `getDbConfig()`     | function | Validates and returns DB config; throws if required env vars are missing |
 | `createKnex()`      | function | Create a Knex instance from the standard DB env vars |
-| `getConfig(key, default?)` | function | Read any env variable with fallback     |
+| `getConfig(key, default?)` | function | Read any env variable with fallback; returns `string \| undefined` (no generic type) |
 | `asyncHandler(fn)`  | function | Wrap async Express handlers (auto-catches)     |
 | `healthCheck()`     | function | Returns `{ status: 'ok', timestamp: '...' }`   |
 | `parsePaginationFromQuery(query, config?)` | function | Parse and validate pagination from Express query params |
@@ -73,29 +73,13 @@ export function getKnex(): Knex {
 }
 ```
 
-`createKnex()` reads from the standard DB env vars:
+`createKnex()` reads from the standard DB env vars and uses pool configuration (min: 2, max: 10):
 ```
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD=secret
 DB_NAME=my_service_db
-```
-
-### Database connection (raw pg Pool — legacy)
-
-```typescript
-import { Pool } from 'pg';
-import { getDbConfig } from '@rajkumarganesan93/shared';
-
-const config = getDbConfig();
-export const pool = new Pool({
-  host: config.host,
-  port: config.port,
-  user: config.user,
-  password: config.password,
-  database: config.database,
-});
 ```
 
 ### Async handler
@@ -121,6 +105,5 @@ const secret = getConfig('JWT_SECRET');
 ## Dependencies
 
 - `@rajkumarganesan93/domain` -- PaginationRequest type
-- `dotenv` -- loads `.env` into process.env
 - `knex` -- SQL query builder
 - `express` (peer) -- handler types

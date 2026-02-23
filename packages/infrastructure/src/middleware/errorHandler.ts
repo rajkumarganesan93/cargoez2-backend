@@ -77,7 +77,7 @@ export function errorHandler(
     let body;
     if (isAppError && err.messageCode) {
       body = errorResponse(err.messageCode, err.messageParams, stack);
-    } else if (isAppError) {
+    } else if (isAppError && statusCode < 500) {
       body = errorRaw(message, statusCode, stack);
     } else {
       body = errorResponse(MessageCode.INTERNAL_ERROR, undefined, stack);

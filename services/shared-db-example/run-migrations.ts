@@ -9,18 +9,18 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const migrationsDir = path.join(__dirname, '..', 'migrations');
 
 async function runMigrations(): Promise<void> {
-  const { getPool } = await import('./src/infrastructure/db.js');
-  const pool = getPool();
+  const { getKnex } = await import('./src/infrastructure/db.js');
+  const knex = getKnex();
   const files = await readdir(migrationsDir);
   const sqlFiles = files.filter((f) => f.endsWith('.sql')).sort();
   for (const file of sqlFiles) {
     const filePath = path.join(migrationsDir, file);
     const sql = await readFile(filePath, 'utf-8');
     console.log(`Running ${file}...`);
-    await pool.query(sql);
+    await knex.raw(sql);
     console.log(`Done ${file}`);
   }
-  await pool.end();
+  await knex.destroy();
 }
 
 runMigrations().catch((err) => {

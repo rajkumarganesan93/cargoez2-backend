@@ -254,7 +254,7 @@ export const swaggerSpec = {
       delete: {
         tags: ['Countries'],
         summary: 'Delete a country',
-        description: 'Permanently deletes a country by UUID.',
+        description: 'Soft-deletes a country by UUID (sets isActive to false).',
         parameters: [
           {
             in: 'path', name: 'id', required: true,

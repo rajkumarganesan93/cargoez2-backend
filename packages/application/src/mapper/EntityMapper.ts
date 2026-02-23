@@ -2,9 +2,15 @@ import type { ColumnMap } from '@rajkumarganesan93/domain';
 
 /**
  * Convert camelCase to snake_case.
+ * Handles consecutive uppercase letters (acronyms) correctly:
+ *   "myURL"  → "my_url"
+ *   "createdAt" → "created_at"
  */
 function toSnakeCase(str: string): string {
-  return str.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`);
+  return str
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([a-z\d])([A-Z])/g, '$1_$2')
+    .toLowerCase();
 }
 
 /**
@@ -25,7 +31,7 @@ function getEntityProp(columnName: string, columnMap?: ColumnMap): string {
     const entry = Object.entries(columnMap).find(([, col]) => col === columnName);
     if (entry) return entry[0];
   }
-  return columnName.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+  return columnName.replace(/_([a-z\d])/g, (_, letter: string) => letter.toUpperCase());
 }
 
 /**

@@ -254,7 +254,7 @@ export const swaggerSpec = {
       delete: {
         tags: ['Users'],
         summary: 'Delete a user',
-        description: 'Permanently deletes a user by UUID.',
+        description: 'Soft-deletes a user by UUID (sets isActive to false).',
         parameters: [
           {
             in: 'path', name: 'id', required: true,

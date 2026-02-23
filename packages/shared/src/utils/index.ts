@@ -54,7 +54,10 @@ export function parsePaginationFromQuery(
     sortBy = allowed?.length ? (allowed.includes(query.sortBy) ? query.sortBy : defaultSortBy) : query.sortBy;
   }
 
-  const sortOrder: 'asc' | 'desc' = query.sortOrder === 'desc' ? 'desc' : defaultSortOrder;
+  const sortOrder: 'asc' | 'desc' =
+    query.sortOrder === 'desc' ? 'desc' :
+    query.sortOrder === 'asc'  ? 'asc'  :
+    defaultSortOrder;
 
   return { page, limit, sortBy, sortOrder };
 }

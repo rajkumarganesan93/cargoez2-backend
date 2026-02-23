@@ -16,7 +16,7 @@ npm install @rajkumarganesan93/integrations
 | `EmailMessage`                | interface | Shape of an email message                 |
 | `StubEmailProvider`           | class     | Logs emails to console (dev/test)         |
 | `INotificationProvider`       | interface | Contract for sending notifications        |
-| `NotificationPayload`         | interface | Shape of a notification                   |
+| `NotificationPayload`         | interface | Shape of a notification; union type requiring at least one destination (`userId`, `deviceToken`, or `topic`) |
 | `StubNotificationProvider`    | class     | Logs notifications to console (dev/test)  |
 
 ## Usage
@@ -71,7 +71,7 @@ import { StubNotificationProvider } from '@rajkumarganesan93/integrations';
 const notifier: INotificationProvider = new StubNotificationProvider();
 
 await notifier.send({
-  userId: 'user-123',
+  userId: 'user-123',  // at least one of userId, deviceToken, or topic required
   title: 'Order shipped',
   body: 'Your order #456 has been shipped.',
   channel: 'push',
@@ -96,4 +96,4 @@ const useCase = new WelcomeEmailUseCase(emailProvider);
 
 ## Dependencies
 
-- `@rajkumarganesan93/shared` -- shared config utilities
+No runtime dependencies (phantom `@rajkumarganesan93/shared` removed).

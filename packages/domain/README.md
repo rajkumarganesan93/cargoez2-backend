@@ -47,13 +47,15 @@ export interface Product extends BaseEntity {
 interface BaseEntity {
   id: string;
   isActive: boolean;
-  createdAt: Date;
-  modifiedAt: Date;
+  createdAt: string;   // ISO 8601
+  modifiedAt: string; // ISO 8601
   createdBy?: string;
   modifiedBy?: string;
   tenantId?: string;
 }
 ```
+
+Date fields (`createdAt`, `modifiedAt`) are ISO 8601 strings, not `Date` objects.
 
 ### Define a repository interface
 
@@ -82,7 +84,7 @@ export interface IProductRepository extends IRepository<Product, CreateProductIn
 | `findMany` | `(criteria: Record<string, unknown>, options?: ListOptions) => Promise<PaginatedResult<T>>` | Filtered paginated list |
 | `save` | `(input: CreateInput) => Promise<T>` | Create a new record |
 | `update` | `(id: string, input: UpdateInput) => Promise<T \| null>` | Update a record by ID |
-| `delete` | `(id: string) => Promise<boolean>` | Delete a record by ID |
+| `delete` | `(id: string) => Promise<boolean>` | Soft-delete a record by ID (sets isActive=false) |
 | `count` | `(criteria?: Record<string, unknown>) => Promise<number>` | Count records matching criteria |
 | `exists` | `(criteria: Record<string, unknown>) => Promise<boolean>` | Check if any record matches |
 

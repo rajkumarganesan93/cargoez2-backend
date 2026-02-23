@@ -17,7 +17,7 @@ npm install @rajkumarganesan93/application
 | `createLogger(name)`      | function | Create a pino logger for a service                 |
 | `logger`                  | object   | Default logger instance                            |
 | `AuditService`            | class    | Records audit trail entries                        |
-| `InMemoryAuditRepository` | class    | In-memory audit store (dev/test)                   |
+| `InMemoryAuditRepository` | class    | In-memory audit store (dev/test); exposes `getEntries()`, `findById()`, `findByEntity()` |
 | `IAuditRepository`        | interface| Contract for persistent audit storage              |
 | `AuditEntry`              | interface| Shape of an audit record                           |
 | `AuditRecordInput`        | interface| Input for recording an audit entry                 |
@@ -40,21 +40,21 @@ const productMap: ColumnMap = {
 };
 
 // DB row -> Entity
-const dbRow = { id: '...', prd_nm: 'Widget', prd_sku: 'W-001', created_at: new Date() };
+const dbRow = { id: '...', prd_nm: 'Widget', prd_sku: 'W-001', created_at: '2025-02-23T12:00:00.000Z' };
 const product = toEntity<Product>(dbRow, productMap);
-// Result: { id: '...', name: 'Widget', sku: 'W-001', createdAt: Date }
+// Result: { id: '...', name: 'Widget', sku: 'W-001', createdAt: string }
 
 // Entity -> DB row
 const row = toRow(product, productMap);
-// Result: { id: '...', prd_nm: 'Widget', prd_sku: 'W-001', created_at: Date }
+// Result: { id: '...', prd_nm: 'Widget', prd_sku: 'W-001', created_at: string }
 ```
 
 Without a ColumnMap, the mapper uses default snake_case conversion:
 
 ```typescript
-const row = { user_id: '123', created_at: new Date() };
+const row = { user_id: '123', created_at: '2025-02-23T12:00:00.000Z' };
 const entity = toEntity(row);
-// Result: { userId: '123', createdAt: Date }
+// Result: { userId: '123', createdAt: string }
 ```
 
 ### Logger
@@ -104,5 +104,4 @@ export class PostgresAuditRepository implements IAuditRepository {
 ## Dependencies
 
 - `@rajkumarganesan93/domain` -- BaseEntity, ColumnMap types
-- `@rajkumarganesan93/shared` -- config utilities
-- `pino` / `pino-pretty` -- logging
+- `pino` -- logging (`pino-pretty` is a devDependency for pretty-printing in development)

@@ -59,7 +59,7 @@ The message catalog provides a **single source of truth** for all API messages. 
 | `INTERNAL_ERROR` | 500 | `An unexpected error occurred` |
 | `SERVICE_UNAVAILABLE` | 503 | `Service is temporarily unavailable` |
 
-Placeholders like `{resource}`, `{field}`, `{email}`, `{reason}` are replaced at runtime via the `params` argument.
+Placeholders like `{resource}`, `{field}`, `{email}`, `{reason}` are replaced at runtime via the `params` argument. Any unreplaced `{placeholder}` tokens are automatically stripped from the final message to prevent template leakage.
 
 ## Usage
 

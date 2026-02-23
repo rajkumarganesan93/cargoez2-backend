@@ -2,6 +2,7 @@ export {
   AppError,
   BadRequestError,
   UnauthorizedError,
+  ForbiddenError,
   NotFoundError,
   ConflictError,
 } from './errors/AppError.js';
