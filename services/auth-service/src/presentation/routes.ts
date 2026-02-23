@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { asyncHandler } from '@cargoez2/shared';
-import { success } from '@cargoez2/api';
+import { asyncHandler } from '@rajkumarganesan93/shared';
+import { success } from '@rajkumarganesan93/api';
 import type { AuthController } from './controllers/AuthController.js';
 
 export function createAuthRoutes(controller: AuthController): Router {

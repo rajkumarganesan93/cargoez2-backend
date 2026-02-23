@@ -1,11 +1,11 @@
-# @cargoez2/integrations
+# @rajkumarganesan93/integrations
 
 Interfaces and stub implementations for third-party integrations (email, notifications). Swap stubs for real providers (SendGrid, AWS SES, Firebase, etc.) in production.
 
 ## Installation
 
 ```bash
-npm install @cargoez2/integrations
+npm install @rajkumarganesan93/integrations
 ```
 
 ## What's included
@@ -24,8 +24,8 @@ npm install @cargoez2/integrations
 ### Email provider
 
 ```typescript
-import type { IEmailProvider, EmailMessage } from '@cargoez2/integrations';
-import { StubEmailProvider } from '@cargoez2/integrations';
+import type { IEmailProvider, EmailMessage } from '@rajkumarganesan93/integrations';
+import { StubEmailProvider } from '@rajkumarganesan93/integrations';
 
 // During development, use the stub:
 const emailProvider: IEmailProvider = new StubEmailProvider();
@@ -43,7 +43,7 @@ await emailProvider.send(message);
 For production, implement the interface with a real provider:
 
 ```typescript
-import type { IEmailProvider, EmailMessage } from '@cargoez2/integrations';
+import type { IEmailProvider, EmailMessage } from '@rajkumarganesan93/integrations';
 import sgMail from '@sendgrid/mail';
 
 export class SendGridEmailProvider implements IEmailProvider {
@@ -65,8 +65,8 @@ export class SendGridEmailProvider implements IEmailProvider {
 ### Notification provider
 
 ```typescript
-import type { INotificationProvider, NotificationPayload } from '@cargoez2/integrations';
-import { StubNotificationProvider } from '@cargoez2/integrations';
+import type { INotificationProvider, NotificationPayload } from '@rajkumarganesan93/integrations';
+import { StubNotificationProvider } from '@rajkumarganesan93/integrations';
 
 const notifier: INotificationProvider = new StubNotificationProvider();
 
@@ -83,7 +83,7 @@ await notifier.send({
 Register providers in your service's composition root:
 
 ```typescript
-import { StubEmailProvider } from '@cargoez2/integrations';
+import { StubEmailProvider } from '@rajkumarganesan93/integrations';
 import { SendGridEmailProvider } from './providers/SendGridEmailProvider.js';
 
 const emailProvider = process.env.NODE_ENV === 'production'
@@ -96,4 +96,4 @@ const useCase = new WelcomeEmailUseCase(emailProvider);
 
 ## Dependencies
 
-- `@cargoez2/shared` -- shared config utilities
+- `@rajkumarganesan93/shared` -- shared config utilities

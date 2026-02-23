@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { success, error } from '@cargoez2/api';
+import { success, error } from '@rajkumarganesan93/api';
 import { RegisterUseCase } from '../../application/use-cases/RegisterUseCase.js';
 import { LoginUseCase } from '../../application/use-cases/LoginUseCase.js';
 import { ValidateTokenUseCase } from '../../application/use-cases/ValidateTokenUseCase.js';

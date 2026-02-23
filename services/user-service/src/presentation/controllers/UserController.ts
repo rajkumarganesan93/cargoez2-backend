@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
-import { NotFoundError } from '@cargoez2/infrastructure';
-import { success, error, successPaginated } from '@cargoez2/api';
+import { NotFoundError } from '@rajkumarganesan93/infrastructure';
+import { success, error, successPaginated } from '@rajkumarganesan93/api';
 import { CreateUserUseCase } from '../../application/use-cases/CreateUserUseCase.js';
 import { GetAllUsersUseCase } from '../../application/use-cases/GetAllUsersUseCase.js';
 import { GetUserByIdUseCase } from '../../application/use-cases/GetUserByIdUseCase.js';

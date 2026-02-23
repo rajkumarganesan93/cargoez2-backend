@@ -1,5 +1,5 @@
 {
-  "name": "@cargoez2/api",
+  "name": "@rajkumarganesan93/api",
   "version": "1.0.0",
   "private": false,
   "type": "module",
@@ -10,7 +10,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@cargoez2/domain": "*"
+    "@rajkumarganesan93/domain": "*"
   },
   "devDependencies": {
     "@types/node": "^20.11.16",

@@ -1,5 +1,5 @@
 import type { User } from '../entities/User.js';
-import type { PaginatedResult, ListOptions } from '@cargoez2/domain';
+import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 
 export interface CreateUserInput {
   name: string;

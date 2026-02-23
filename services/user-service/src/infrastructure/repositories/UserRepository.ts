@@ -1,6 +1,6 @@
 import { pool } from '../db.js';
-import { toEntity } from '@cargoez2/application';
-import type { ListOptions } from '@cargoez2/domain';
+import { toEntity } from '@rajkumarganesan93/application';
+import type { ListOptions } from '@rajkumarganesan93/domain';
 import type {
   IUserRepository,
   CreateUserInput,

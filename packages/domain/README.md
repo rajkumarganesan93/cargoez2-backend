@@ -1,11 +1,11 @@
-# @cargoez2/domain
+# @rajkumarganesan93/domain
 
 Core domain types and interfaces for the CargoEz platform. This package contains no business logic or framework dependencies -- only pure TypeScript types.
 
 ## Installation
 
 ```bash
-npm install @cargoez2/domain
+npm install @rajkumarganesan93/domain
 ```
 
 Requires `.npmrc` configuration (see [root README](../../README.md#installing-packages)).
@@ -32,7 +32,7 @@ Requires `.npmrc` configuration (see [root README](../../README.md#installing-pa
 Every domain entity must extend `BaseEntity`. Entity properties always use **camelCase**.
 
 ```typescript
-import type { BaseEntity } from '@cargoez2/domain';
+import type { BaseEntity } from '@rajkumarganesan93/domain';
 
 export interface Product extends BaseEntity {
   name: string;
@@ -59,7 +59,7 @@ interface BaseEntity {
 ### Define a repository interface
 
 ```typescript
-import type { IRepository } from '@cargoez2/domain';
+import type { IRepository } from '@rajkumarganesan93/domain';
 import type { Product } from '../entities/Product.js';
 
 interface CreateProductInput {
@@ -86,7 +86,7 @@ export interface IProductRepository extends IRepository<Product, CreateProductIn
 Use `ListOptions` for list endpoints and return `PaginatedResult`:
 
 ```typescript
-import type { ListOptions, PaginatedResult } from '@cargoez2/domain';
+import type { ListOptions, PaginatedResult } from '@rajkumarganesan93/domain';
 
 async function listProducts(options?: ListOptions): Promise<PaginatedResult<Product>> {
   // options.pagination = { page: 1, limit: 20, sortBy: 'name', sortOrder: 'asc' }
@@ -108,7 +108,7 @@ All API responses follow the same shape:
 Map entity properties to DB columns for security/obfuscation:
 
 ```typescript
-import type { ColumnMap } from '@cargoez2/domain';
+import type { ColumnMap } from '@rajkumarganesan93/domain';
 
 const productColumnMap: ColumnMap = {
   name: 'prd_nm',

@@ -1,5 +1,5 @@
 import { pool } from '../db.js';
-import { toEntity } from '@cargoez2/application';
+import { toEntity } from '@rajkumarganesan93/application';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
 import type { User } from '../../domain/entities/User.js';
 

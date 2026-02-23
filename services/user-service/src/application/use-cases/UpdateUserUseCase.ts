@@ -1,4 +1,4 @@
-import { ConflictError } from '@cargoez2/infrastructure';
+import { ConflictError } from '@rajkumarganesan93/infrastructure';
 import type { IUserRepository, UpdateUserInput } from '../../domain/repositories/IUserRepository.js';
 import type { User } from '../../domain/entities/User.js';
 

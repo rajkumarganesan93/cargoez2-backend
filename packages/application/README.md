@@ -1,11 +1,11 @@
-# @cargoez2/application
+# @rajkumarganesan93/application
 
 Application-layer utilities: entity-to-DB mapping, audit service, and structured logging.
 
 ## Installation
 
 ```bash
-npm install @cargoez2/application
+npm install @rajkumarganesan93/application
 ```
 
 ## What's included
@@ -29,8 +29,8 @@ npm install @cargoez2/application
 The mapper converts between DB rows (snake_case columns) and domain entities (camelCase properties).
 
 ```typescript
-import { toEntity, toRow } from '@cargoez2/application';
-import type { ColumnMap } from '@cargoez2/domain';
+import { toEntity, toRow } from '@rajkumarganesan93/application';
+import type { ColumnMap } from '@rajkumarganesan93/domain';
 import type { Product } from '../domain/entities/Product.js';
 
 // Optional: custom column aliases for security
@@ -60,7 +60,7 @@ const entity = toEntity(row);
 ### Logger
 
 ```typescript
-import { createLogger } from '@cargoez2/application';
+import { createLogger } from '@rajkumarganesan93/application';
 
 const logger = createLogger('product-service');
 logger.info({ productId: '123' }, 'Product created');
@@ -72,7 +72,7 @@ The logger uses [pino](https://getpino.io/) with structured JSON output in produ
 ### Audit service
 
 ```typescript
-import { AuditService, InMemoryAuditRepository } from '@cargoez2/application';
+import { AuditService, InMemoryAuditRepository } from '@rajkumarganesan93/application';
 
 const auditRepo = new InMemoryAuditRepository();
 const auditService = new AuditService(auditRepo);
@@ -90,7 +90,7 @@ await auditService.record({
 For production, implement `IAuditRepository` with a real database:
 
 ```typescript
-import type { IAuditRepository } from '@cargoez2/application';
+import type { IAuditRepository } from '@rajkumarganesan93/application';
 
 export class PostgresAuditRepository implements IAuditRepository {
   async save(entry: AuditEntry): Promise<void> {
@@ -103,6 +103,6 @@ export class PostgresAuditRepository implements IAuditRepository {
 
 ## Dependencies
 
-- `@cargoez2/domain` -- BaseEntity, ColumnMap types
-- `@cargoez2/shared` -- config utilities
+- `@rajkumarganesan93/domain` -- BaseEntity, ColumnMap types
+- `@rajkumarganesan93/shared` -- config utilities
 - `pino` / `pino-pretty` -- logging

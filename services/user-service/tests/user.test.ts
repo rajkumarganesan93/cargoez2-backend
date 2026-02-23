@@ -1,7 +1,7 @@
 import request from 'supertest';
 import express from 'express';
-import { createLogger } from '@cargoez2/application';
-import { errorHandler } from '@cargoez2/infrastructure';
+import { createLogger } from '@rajkumarganesan93/application';
+import { errorHandler } from '@rajkumarganesan93/infrastructure';
 import { createUserRoutes } from '../src/presentation/routes.js';
 import { UserController } from '../src/presentation/controllers/UserController.js';
 import { CreateUserUseCase } from '../src/application/use-cases/CreateUserUseCase.js';

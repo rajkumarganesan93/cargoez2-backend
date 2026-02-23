@@ -1,4 +1,4 @@
-import type { BaseEntity } from '@cargoez2/domain';
+import type { BaseEntity } from '@rajkumarganesan93/domain';
 
 export interface User extends BaseEntity {
   email: string;

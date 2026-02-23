@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { asyncHandler } from '@cargoez2/shared';
-import { success } from '@cargoez2/api';
+import { asyncHandler } from '@rajkumarganesan93/shared';
+import { success } from '@rajkumarganesan93/api';
 import type { UserController } from './controllers/UserController.js';
 
 export function createUserRoutes(controller: UserController): Router {

@@ -1,5 +1,5 @@
 import { pool } from '../db.js';
-import { toEntity } from '@cargoez2/application';
+import { toEntity } from '@rajkumarganesan93/application';
 import type { ITokenRepository } from '../../domain/repositories/ITokenRepository.js';
 import type { Token } from '../../domain/entities/Token.js';
 

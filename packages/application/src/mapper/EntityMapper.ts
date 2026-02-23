@@ -1,4 +1,4 @@
-import type { ColumnMap } from '@cargoez2/domain';
+import type { ColumnMap } from '@rajkumarganesan93/domain';
 
 /**
  * Convert camelCase to snake_case.

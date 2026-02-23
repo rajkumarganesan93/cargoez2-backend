@@ -1,4 +1,4 @@
-import { UnauthorizedError } from '@cargoez2/infrastructure';
+import { UnauthorizedError } from '@rajkumarganesan93/infrastructure';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
 import type { ITokenRepository } from '../../domain/repositories/ITokenRepository.js';
 

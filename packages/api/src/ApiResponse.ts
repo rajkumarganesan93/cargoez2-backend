@@ -1,8 +1,8 @@
 import type {
   ApiSuccessResponse,
   ApiErrorResponse,
-} from '@cargoez2/domain';
-import type { PaginatedResult } from '@cargoez2/domain';
+} from '@rajkumarganesan93/domain';
+import type { PaginatedResult } from '@rajkumarganesan93/domain';
 
 function timestamp(): string {
   return new Date().toISOString();

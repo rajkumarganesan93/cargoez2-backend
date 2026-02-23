@@ -1,4 +1,4 @@
-import { BadRequestError, ConflictError } from '@cargoez2/infrastructure';
+import { BadRequestError, ConflictError } from '@rajkumarganesan93/infrastructure';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
 import type { IRoleRepository } from '../../domain/repositories/IRoleRepository.js';
 import type { User } from '../../domain/entities/User.js';

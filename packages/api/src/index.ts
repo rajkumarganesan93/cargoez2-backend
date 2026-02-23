@@ -3,5 +3,5 @@ export type {
   ApiErrorResponse,
   ApiResponse,
   PaginatedResult,
-} from '@cargoez2/domain';
+} from '@rajkumarganesan93/domain';
 export { success, error, successPaginated } from './ApiResponse.js';

@@ -1,5 +1,5 @@
 {
-  "name": "@cargoez2/application",
+  "name": "@rajkumarganesan93/application",
   "version": "1.0.0",
   "private": false,
   "type": "module",
@@ -10,8 +10,8 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@cargoez2/domain": "*",
-    "@cargoez2/shared": "*",
+    "@rajkumarganesan93/domain": "*",
+    "@rajkumarganesan93/shared": "*",
     "pino": "^8.17.2",
     "pino-pretty": "^10.3.1"
   },

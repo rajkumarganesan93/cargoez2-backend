@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
-import { createLogger } from '@cargoez2/application';
-import { errorHandler, requestLogger, NotFoundError } from '@cargoez2/infrastructure';
+import { createLogger } from '@rajkumarganesan93/application';
+import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
 import { swaggerSpec } from './presentation/swagger.js';
 import { createUserRoutes } from './presentation/routes.js';
 import { UserController } from './presentation/controllers/UserController.js';

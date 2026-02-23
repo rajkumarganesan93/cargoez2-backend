@@ -1,5 +1,5 @@
 import { Pool } from 'pg';
-import { getDbConfig } from '@cargoez2/shared';
+import { getDbConfig } from '@rajkumarganesan93/shared';
 
 const config = getDbConfig();
 export const pool = new Pool({

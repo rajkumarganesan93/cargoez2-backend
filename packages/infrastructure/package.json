@@ -1,5 +1,5 @@
 {
-  "name": "@cargoez2/infrastructure",
+  "name": "@rajkumarganesan93/infrastructure",
   "version": "1.0.0",
   "private": false,
   "type": "module",
@@ -10,9 +10,9 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@cargoez2/application": "*",
-    "@cargoez2/api": "*",
-    "@cargoez2/domain": "*"
+    "@rajkumarganesan93/application": "*",
+    "@rajkumarganesan93/api": "*",
+    "@rajkumarganesan93/domain": "*"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",

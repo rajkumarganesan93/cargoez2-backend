@@ -1,5 +1,5 @@
 import { pool } from '../db.js';
-import { toEntity } from '@cargoez2/application';
+import { toEntity } from '@rajkumarganesan93/application';
 import type { IRoleRepository } from '../../domain/repositories/IRoleRepository.js';
 import type { Role } from '../../domain/entities/Role.js';
 

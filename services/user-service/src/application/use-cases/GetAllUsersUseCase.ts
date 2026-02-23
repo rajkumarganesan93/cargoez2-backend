@@ -1,4 +1,4 @@
-import type { PaginatedResult, ListOptions } from '@cargoez2/domain';
+import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 import type { User } from '../../domain/entities/User.js';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
 

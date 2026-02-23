@@ -1,11 +1,11 @@
-# @cargoez2/shared
+# @rajkumarganesan93/shared
 
 Minimal shared utilities: database config, Express helpers, and environment management.
 
 ## Installation
 
 ```bash
-npm install @cargoez2/shared
+npm install @rajkumarganesan93/shared
 ```
 
 **Peer dependency:** `express` must be installed in your service.
@@ -27,7 +27,7 @@ npm install @cargoez2/shared
 
 ```typescript
 import { Pool } from 'pg';
-import { getDbConfig } from '@cargoez2/shared';
+import { getDbConfig } from '@rajkumarganesan93/shared';
 
 const config = getDbConfig();
 export const pool = new Pool({
@@ -53,7 +53,7 @@ DB_NAME=my_service_db
 Wraps async route handlers so thrown errors are automatically forwarded to Express error middleware:
 
 ```typescript
-import { asyncHandler } from '@cargoez2/shared';
+import { asyncHandler } from '@rajkumarganesan93/shared';
 
 router.get('/products', asyncHandler(controller.getAll.bind(controller)));
 router.post('/products', asyncHandler(controller.create.bind(controller)));
@@ -64,7 +64,7 @@ Without `asyncHandler`, you'd need try/catch in every async handler.
 ### Config helper
 
 ```typescript
-import { getConfig } from '@cargoez2/shared';
+import { getConfig } from '@rajkumarganesan93/shared';
 
 const port = getConfig('PORT', '3001');
 const secret = getConfig('JWT_SECRET');

@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import type pino from 'pino';
 import { AppError } from '../errors/AppError.js';
-import { error as errorResponse } from '@cargoez2/api';
+import { error as errorResponse } from '@rajkumarganesan93/api';
 
 type Logger = pino.Logger;
 

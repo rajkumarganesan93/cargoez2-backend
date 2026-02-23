@@ -1,11 +1,11 @@
-# @cargoez2/api
+# @rajkumarganesan93/api
 
 API response builder functions for consistent JSON response formatting across all services.
 
 ## Installation
 
 ```bash
-npm install @cargoez2/api
+npm install @rajkumarganesan93/api
 ```
 
 ## What's included
@@ -15,17 +15,17 @@ npm install @cargoez2/api
 | `success(data?, message?)` | function | Build a success response            |
 | `error(message, statusCode?, stack?)` | function | Build an error response   |
 | `successPaginated(items, meta)` | function | Build a paginated success response |
-| `ApiSuccessResponse` | type   | Re-exported from @cargoez2/domain           |
-| `ApiErrorResponse`   | type   | Re-exported from @cargoez2/domain           |
-| `ApiResponse`        | type   | Re-exported from @cargoez2/domain           |
-| `PaginatedResult`    | type   | Re-exported from @cargoez2/domain           |
+| `ApiSuccessResponse` | type   | Re-exported from @rajkumarganesan93/domain           |
+| `ApiErrorResponse`   | type   | Re-exported from @rajkumarganesan93/domain           |
+| `ApiResponse`        | type   | Re-exported from @rajkumarganesan93/domain           |
+| `PaginatedResult`    | type   | Re-exported from @rajkumarganesan93/domain           |
 
 ## Usage
 
 ### Success response
 
 ```typescript
-import { success } from '@cargoez2/api';
+import { success } from '@rajkumarganesan93/api';
 
 // In a controller:
 const user = await createUserUseCase.execute(input);
@@ -40,7 +40,7 @@ return res.status(200).json(success(undefined, 'User deleted successfully'));
 ### Error response
 
 ```typescript
-import { error } from '@cargoez2/api';
+import { error } from '@rajkumarganesan93/api';
 
 // In a controller:
 if (!req.body.email) {
@@ -52,7 +52,7 @@ if (!req.body.email) {
 ### Paginated response
 
 ```typescript
-import { successPaginated } from '@cargoez2/api';
+import { successPaginated } from '@rajkumarganesan93/api';
 
 // In a controller after fetching paginated data:
 const result = await getAllProductsUseCase.execute({ pagination: { page: 1, limit: 20 } });
@@ -93,4 +93,4 @@ All APIs in the platform return one of these shapes:
 
 ## Dependencies
 
-- `@cargoez2/domain` -- response type definitions
+- `@rajkumarganesan93/domain` -- response type definitions

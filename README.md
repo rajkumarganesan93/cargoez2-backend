@@ -6,7 +6,7 @@ Node.js microservices monorepo with PostgreSQL, Clean Architecture, and publisha
 
 ```
 cargoez2-backend/
-├── packages/                    # Publishable @cargoez2/* packages
+├── packages/                    # Publishable @rajkumarganesan93/* packages
 │   ├── domain/                  # BaseEntity, IRepository, API types, ColumnMap
 │   ├── application/             # Mapper, Audit, Logger
 │   ├── infrastructure/          # Error handler, AppError classes
@@ -24,12 +24,12 @@ cargoez2-backend/
 ### Package dependency graph
 
 ```
-@cargoez2/shared        (no deps)
-@cargoez2/domain        (no deps)
-@cargoez2/api           → domain
-@cargoez2/application   → domain, shared
-@cargoez2/infrastructure → application, api, domain
-@cargoez2/integrations  → shared
+@rajkumarganesan93/shared        (no deps)
+@rajkumarganesan93/domain        (no deps)
+@rajkumarganesan93/api           → domain
+@rajkumarganesan93/application   → domain, shared
+@rajkumarganesan93/infrastructure → application, api, domain
+@rajkumarganesan93/integrations  → shared
 ```
 
 ### Clean Architecture layers (per service)
@@ -111,16 +111,16 @@ npm run dev -w @cargoez-be/auth-service
 
 ## Packages
 
-All packages are published to [GitHub Packages](https://github.com/rajkumarganesan93/cargoez2-backend/packages) under the `@cargoez2` scope.
+All packages are published to [GitHub Packages](https://github.com/rajkumarganesan93/cargoez2-backend/packages) under the `@rajkumarganesan93` scope.
 
 | Package | Purpose | README |
 | ------- | ------- | ------ |
-| `@cargoez2/domain` | Core types: BaseEntity, IRepository, pagination, API response types, ColumnMap | [packages/domain/README.md](packages/domain/README.md) |
-| `@cargoez2/application` | Entity mapper (toEntity/toRow), audit service, pino logger | [packages/application/README.md](packages/application/README.md) |
-| `@cargoez2/infrastructure` | AppError classes, errorHandler/requestLogger middleware | [packages/infrastructure/README.md](packages/infrastructure/README.md) |
-| `@cargoez2/api` | Response helpers: success(), error(), successPaginated() | [packages/api/README.md](packages/api/README.md) |
-| `@cargoez2/shared` | getDbConfig, getConfig, asyncHandler, healthCheck | [packages/shared/README.md](packages/shared/README.md) |
-| `@cargoez2/integrations` | IEmailProvider, INotificationProvider + stub implementations | [packages/integrations/README.md](packages/integrations/README.md) |
+| `@rajkumarganesan93/domain` | Core types: BaseEntity, IRepository, pagination, API response types, ColumnMap | [packages/domain/README.md](packages/domain/README.md) |
+| `@rajkumarganesan93/application` | Entity mapper (toEntity/toRow), audit service, pino logger | [packages/application/README.md](packages/application/README.md) |
+| `@rajkumarganesan93/infrastructure` | AppError classes, errorHandler/requestLogger middleware | [packages/infrastructure/README.md](packages/infrastructure/README.md) |
+| `@rajkumarganesan93/api` | Response helpers: success(), error(), successPaginated() | [packages/api/README.md](packages/api/README.md) |
+| `@rajkumarganesan93/shared` | getDbConfig, getConfig, asyncHandler, healthCheck | [packages/shared/README.md](packages/shared/README.md) |
+| `@rajkumarganesan93/integrations` | IEmailProvider, INotificationProvider + stub implementations | [packages/integrations/README.md](packages/integrations/README.md) |
 
 ---
 
@@ -129,34 +129,34 @@ All packages are published to [GitHub Packages](https://github.com/rajkumarganes
 ### 1. Create `.npmrc` in your project root
 
 ```
-@cargoez2:registry=https://npm.pkg.github.com
+@rajkumarganesan93:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
 ```
 
 Or use an environment variable:
 
 ```
-@cargoez2:registry=https://npm.pkg.github.com
+@rajkumarganesan93:registry=https://npm.pkg.github.com
 //npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
 ### 2. Install packages
 
 ```bash
-npm install @cargoez2/domain @cargoez2/application @cargoez2/infrastructure @cargoez2/api @cargoez2/shared
+npm install @rajkumarganesan93/domain @rajkumarganesan93/application @rajkumarganesan93/infrastructure @rajkumarganesan93/api @rajkumarganesan93/shared
 ```
 
 ---
 
 ## Developer guide: building a new service
 
-Follow this guide when creating a new microservice that uses the `@cargoez2` packages.
+Follow this guide when creating a new microservice that uses the `@rajkumarganesan93` packages.
 
 ### Step 1: Define your entity
 
 ```typescript
 // src/domain/entities/Product.ts
-import type { BaseEntity } from '@cargoez2/domain';
+import type { BaseEntity } from '@rajkumarganesan93/domain';
 
 export interface Product extends BaseEntity {
   name: string;
@@ -169,7 +169,7 @@ export interface Product extends BaseEntity {
 
 ```typescript
 // src/domain/repositories/IProductRepository.ts
-import type { PaginatedResult, ListOptions } from '@cargoez2/domain';
+import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 import type { Product } from '../entities/Product.js';
 
 export interface CreateProductInput { name: string; sku: string; price: number; }
@@ -189,8 +189,8 @@ export interface IProductRepository {
 ```typescript
 // src/infrastructure/repositories/ProductRepository.ts
 import { pool } from '../db.js';
-import { toEntity } from '@cargoez2/application';
-import type { ListOptions } from '@cargoez2/domain';
+import { toEntity } from '@rajkumarganesan93/application';
+import type { ListOptions } from '@rajkumarganesan93/domain';
 import type { Product } from '../../domain/entities/Product.js';
 import type { IProductRepository, CreateProductInput, UpdateProductInput } from '../../domain/repositories/IProductRepository.js';
 
@@ -237,7 +237,7 @@ export class ProductRepository implements IProductRepository {
 
 ```typescript
 // src/application/use-cases/CreateProductUseCase.ts
-import { ConflictError } from '@cargoez2/infrastructure';
+import { ConflictError } from '@rajkumarganesan93/infrastructure';
 import type { IProductRepository } from '../../domain/repositories/IProductRepository.js';
 
 export class CreateProductUseCase {
@@ -253,8 +253,8 @@ export class CreateProductUseCase {
 
 ```typescript
 // src/presentation/controllers/ProductController.ts
-import { NotFoundError } from '@cargoez2/infrastructure';
-import { success, error, successPaginated } from '@cargoez2/api';
+import { NotFoundError } from '@rajkumarganesan93/infrastructure';
+import { success, error, successPaginated } from '@rajkumarganesan93/api';
 
 export class ProductController {
   // constructor with use cases...
@@ -277,8 +277,8 @@ export class ProductController {
 
 ```typescript
 // src/presentation/routes.ts
-import { asyncHandler } from '@cargoez2/shared';
-import { success } from '@cargoez2/api';
+import { asyncHandler } from '@rajkumarganesan93/shared';
+import { success } from '@rajkumarganesan93/api';
 
 export function createRoutes(controller: ProductController) {
   const router = Router();
@@ -291,8 +291,8 @@ export function createRoutes(controller: ProductController) {
 
 ```typescript
 // src/index.ts
-import { createLogger } from '@cargoez2/application';
-import { errorHandler, requestLogger, NotFoundError } from '@cargoez2/infrastructure';
+import { createLogger } from '@rajkumarganesan93/application';
+import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
 
 const logger = createLogger('product-service');
 const app = express();

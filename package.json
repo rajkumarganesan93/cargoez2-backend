@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build:packages && npm run build -w @cargoez-be/user-service -w @cargoez-be/auth-service",
-    "build:packages": "npm run build -w @cargoez2/domain && npm run build -w @cargoez2/shared && npm run build -w @cargoez2/api && npm run build -w @cargoez2/application && npm run build -w @cargoez2/infrastructure && npm run build -w @cargoez2/integrations",
+    "build:packages": "npm run build -w @rajkumarganesan93/domain && npm run build -w @rajkumarganesan93/shared && npm run build -w @rajkumarganesan93/api && npm run build -w @rajkumarganesan93/application && npm run build -w @rajkumarganesan93/infrastructure && npm run build -w @rajkumarganesan93/integrations",
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,js,json,md}\"",
@@ -18,7 +18,7 @@
     "migrate:user": "npm run build -w @cargoez-be/user-service && npm run migrate -w @cargoez-be/user-service",
     "migrate:auth": "npm run build -w @cargoez-be/auth-service && npm run migrate -w @cargoez-be/auth-service",
     "migrate:all": "npm run migrate:user && npm run migrate:auth",
-    "publish:packages": "npm run build:packages && npm publish -w @cargoez2/domain && npm publish -w @cargoez2/shared && npm publish -w @cargoez2/api && npm publish -w @cargoez2/application && npm publish -w @cargoez2/infrastructure && npm publish -w @cargoez2/integrations"
+    "publish:packages": "npm run build:packages && npm publish -w @rajkumarganesan93/domain && npm publish -w @rajkumarganesan93/shared && npm publish -w @rajkumarganesan93/api && npm publish -w @rajkumarganesan93/application && npm publish -w @rajkumarganesan93/infrastructure && npm publish -w @rajkumarganesan93/integrations"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.56.0",

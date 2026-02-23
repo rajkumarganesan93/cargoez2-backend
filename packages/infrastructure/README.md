@@ -1,11 +1,11 @@
-# @cargoez2/infrastructure
+# @rajkumarganesan93/infrastructure
 
 Express middleware and error classes for standardized error handling across all services.
 
 ## Installation
 
 ```bash
-npm install @cargoez2/infrastructure
+npm install @rajkumarganesan93/infrastructure
 ```
 
 **Peer dependency:** `express` must be installed in your service.
@@ -28,7 +28,7 @@ npm install @cargoez2/infrastructure
 ### Throwing errors in use cases
 
 ```typescript
-import { NotFoundError, ConflictError, BadRequestError } from '@cargoez2/infrastructure';
+import { NotFoundError, ConflictError, BadRequestError } from '@rajkumarganesan93/infrastructure';
 
 export class CreateProductUseCase {
   async execute(input: CreateProductInput): Promise<Product> {
@@ -54,8 +54,8 @@ export class GetProductUseCase {
 
 ```typescript
 import express from 'express';
-import { createLogger } from '@cargoez2/application';
-import { errorHandler, requestLogger, NotFoundError } from '@cargoez2/infrastructure';
+import { createLogger } from '@rajkumarganesan93/application';
+import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
 
 const logger = createLogger('product-service');
 const app = express();
@@ -74,7 +74,7 @@ app.use(errorHandler({ logger }));
 
 The `errorHandler` middleware:
 - Logs 5xx errors at `error` level, 4xx at `warn` level
-- Returns a JSON response using the `@cargoez2/api` error format
+- Returns a JSON response using the `@rajkumarganesan93/api` error format
 - Includes stack trace only in non-production environments
 
 ### Custom errors
@@ -82,7 +82,7 @@ The `errorHandler` middleware:
 Extend `AppError` for domain-specific errors:
 
 ```typescript
-import { AppError } from '@cargoez2/infrastructure';
+import { AppError } from '@rajkumarganesan93/infrastructure';
 
 export class InsufficientStockError extends AppError {
   constructor(productId: string) {
@@ -94,6 +94,6 @@ export class InsufficientStockError extends AppError {
 
 ## Dependencies
 
-- `@cargoez2/application` -- logger types
-- `@cargoez2/api` -- error response builder
+- `@rajkumarganesan93/application` -- logger types
+- `@rajkumarganesan93/api` -- error response builder
 - `express` (peer) -- middleware types
