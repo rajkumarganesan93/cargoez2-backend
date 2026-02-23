@@ -1,4 +1,5 @@
 import { ConflictError } from '@rajkumarganesan93/infrastructure';
+import { MessageCode } from '@rajkumarganesan93/api';
 import type { IUserRepository } from '../../domain/repositories/IUserRepository.js';
 import type { User } from '../../domain/entities/User.js';
 
@@ -13,7 +14,7 @@ export class CreateUserUseCase {
   async execute(input: CreateUserInput): Promise<User> {
     const existing = await this.userRepository.findOne({ email: input.email });
     if (existing) {
-      throw new ConflictError('User with this email already exists');
+      throw new ConflictError(MessageCode.DUPLICATE_EMAIL, { email: input.email });
     }
     return this.userRepository.save(input);
   }

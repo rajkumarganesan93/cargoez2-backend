@@ -4,4 +4,7 @@ export type {
   ApiResponse,
   PaginatedResult,
 } from '@rajkumarganesan93/domain';
-export { success, error, successPaginated } from './ApiResponse.js';
+export { success, error, errorRaw, successPaginated } from './ApiResponse.js';
+export { MessageCode } from './messages/index.js';
+export { MessageCatalog, resolveMessage } from './messages/index.js';
+export type { MessageEntry, ResolvedMessage } from './messages/index.js';

@@ -10,7 +10,7 @@ cargoez2-backend/
 │   ├── domain/                  # BaseEntity, IRepository (9 methods), pagination, ColumnMap
 │   ├── application/             # Mapper, Audit, Logger
 │   ├── infrastructure/          # Error handler, AppError classes
-│   ├── api/                     # success(), error(), successPaginated()
+│   ├── api/                     # MessageCode, MessageCatalog, success(), error()
 │   ├── shared/                  # getDbConfig, asyncHandler, parsePaginationFromQuery
 │   └── integrations/            # Email & notification interfaces + stubs
 ├── services/
@@ -111,8 +111,8 @@ All packages are published to [GitHub Packages](https://github.com/rajkumarganes
 | ------- | ------- | ------ |
 | `@rajkumarganesan93/domain` | BaseEntity, IRepository (9 methods), pagination, API response types, ColumnMap | [packages/domain/README.md](packages/domain/README.md) |
 | `@rajkumarganesan93/application` | Entity mapper (toEntity/toRow), audit service, pino logger | [packages/application/README.md](packages/application/README.md) |
-| `@rajkumarganesan93/infrastructure` | AppError classes, errorHandler/requestLogger middleware | [packages/infrastructure/README.md](packages/infrastructure/README.md) |
-| `@rajkumarganesan93/api` | Response helpers: success(), error(), successPaginated() | [packages/api/README.md](packages/api/README.md) |
+| `@rajkumarganesan93/infrastructure` | AppError classes (MessageCode-aware), errorHandler/requestLogger middleware | [packages/infrastructure/README.md](packages/infrastructure/README.md) |
+| `@rajkumarganesan93/api` | MessageCode, MessageCatalog, response helpers: success(), error(), successPaginated() | [packages/api/README.md](packages/api/README.md) |
 | `@rajkumarganesan93/shared` | getDbConfig, asyncHandler, parsePaginationFromQuery | [packages/shared/README.md](packages/shared/README.md) |
 | `@rajkumarganesan93/integrations` | IEmailProvider, INotificationProvider + stub implementations | [packages/integrations/README.md](packages/integrations/README.md) |
 
@@ -201,17 +201,18 @@ export class ProductRepository implements IProductRepository {
 
 ### Step 4: Create use cases
 
-Use `findOne` instead of domain-specific finders like `findByEmail` or `findBySku`:
+Use `findOne` instead of domain-specific finders like `findByEmail` or `findBySku`. Use `MessageCode` for all errors:
 
 ```typescript
 import { ConflictError } from '@rajkumarganesan93/infrastructure';
+import { MessageCode } from '@rajkumarganesan93/api';
 
 export class CreateProductUseCase {
   constructor(private readonly repo: IProductRepository) {}
 
   async execute(input: CreateProductInput) {
     const existing = await this.repo.findOne({ sku: input.sku });
-    if (existing) throw new ConflictError('Product with this SKU already exists');
+    if (existing) throw new ConflictError(MessageCode.DUPLICATE_ENTRY, { resource: 'Product', field: 'SKU' });
     return this.repo.save(input);
   }
 }
@@ -219,19 +220,36 @@ export class CreateProductUseCase {
 
 ### Step 5: Create controller
 
-Use `parsePaginationFromQuery` from `@rajkumarganesan93/shared` for validated, configurable pagination parsing:
+Use `MessageCode` for all success and error responses. Use `parsePaginationFromQuery` for validated pagination:
 
 ```typescript
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
-import { success, successPaginated } from '@rajkumarganesan93/api';
+import { success, error, successPaginated, MessageCode } from '@rajkumarganesan93/api';
+import { NotFoundError } from '@rajkumarganesan93/infrastructure';
 
 export class ProductController {
+  create = async (req: Request, res: Response) => {
+    if (!req.body.name) {
+      return res.status(400).json(error(MessageCode.FIELD_REQUIRED, { field: 'name' }));
+    }
+    const product = await this.createUseCase.execute(req.body);
+    return res.status(201).json(success(product, MessageCode.CREATED, { resource: 'Product' }));
+  };
+
   getAll = async (req: Request, res: Response) => {
     const pagination = parsePaginationFromQuery(req.query, {
       allowedSortFields: ['name', 'sku', 'price', 'createdAt'],
     });
     const result = await this.getAllUseCase.execute({ pagination });
-    return res.status(200).json(successPaginated(result.items, result.meta));
+    return res.status(200).json(
+      successPaginated(result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'Product' })
+    );
+  };
+
+  getById = async (req: Request, res: Response) => {
+    const product = await this.getByIdUseCase.execute(req.params.id);
+    if (!product) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Product' });
+    return res.status(200).json(success(product, MessageCode.FETCHED, { resource: 'Product' }));
   };
 }
 ```
@@ -240,7 +258,7 @@ export class ProductController {
 
 ```typescript
 import { asyncHandler } from '@rajkumarganesan93/shared';
-import { success } from '@rajkumarganesan93/api';
+import { success, MessageCode } from '@rajkumarganesan93/api';
 import { createLogger } from '@rajkumarganesan93/application';
 import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
 
@@ -249,7 +267,7 @@ const app = express();
 app.use(express.json());
 app.use(requestLogger(logger));
 app.use(createRoutes(controller));
-app.use((_req, _res, next) => next(new NotFoundError('Not found')));
+app.use((_req, _res, next) => next(new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Route' })));
 app.use(errorHandler({ logger }));
 ```
 
@@ -331,18 +349,49 @@ Postgres runs on port 5432 with databases auto-created via `scripts/init-dbs.sh`
 
 ## API response format
 
-All APIs return a consistent JSON structure:
+All APIs return a consistent JSON structure with a `messageCode` field for programmatic handling:
 
 ```jsonc
 // Success
-{ "success": true, "data": { ... }, "timestamp": "2026-02-23T10:00:00.000Z" }
+{
+  "success": true,
+  "messageCode": "CREATED",
+  "message": "User created successfully",
+  "data": { "id": "...", "name": "..." },
+  "timestamp": "2026-02-23T10:00:00.000Z"
+}
 
 // Paginated success
-{ "success": true, "data": { "items": [...], "meta": { "total": 50, "page": 1, "limit": 20, "totalPages": 3 } }, "timestamp": "..." }
+{
+  "success": true,
+  "messageCode": "LIST_FETCHED",
+  "message": "User list fetched successfully",
+  "data": {
+    "items": [...],
+    "meta": { "total": 50, "page": 1, "limit": 20, "totalPages": 3 }
+  },
+  "timestamp": "..."
+}
 
 // Error
-{ "success": false, "error": "Not found", "statusCode": 404, "timestamp": "..." }
+{
+  "success": false,
+  "messageCode": "NOT_FOUND",
+  "error": "User not found",
+  "statusCode": 404,
+  "timestamp": "..."
+}
 ```
+
+### Key rule: No raw strings
+
+Developers must **never** write raw error/success messages. Use `MessageCode` values from `@rajkumarganesan93/api`. The message catalog is controlled centrally and provides:
+- Type-safe codes that TypeScript validates at compile time
+- Templated messages with `{placeholder}` support (e.g., `{resource}`, `{field}`, `{email}`)
+- Consistent `messageCode` field for frontend programmatic handling
+- Future i18n/localization support
+
+See the [api package README](packages/api/README.md) for the complete list of available message codes.
 
 ---
 

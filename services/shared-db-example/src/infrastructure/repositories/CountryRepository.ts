@@ -1,4 +1,4 @@
-import { pool } from '../db.js';
+import { getPool } from '../db.js';
 import { toEntity } from '@rajkumarganesan93/application';
 import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 import type {
@@ -50,13 +50,13 @@ export class CountryRepository implements ICountryRepository {
     const limit = Math.min(options?.pagination?.limit ?? 20, 100);
     const offset = (page - 1) * limit;
 
-    const countResult = await pool.query('SELECT COUNT(*)::int AS count FROM countries WHERE is_active = true');
+    const countResult = await getPool().query('SELECT COUNT(*)::int AS count FROM countries WHERE is_active = true');
     const total: number = countResult.rows[0]?.count ?? 0;
 
     const sortCol = resolveColumn(options?.pagination?.sortBy ?? '') ?? 'created_at';
     const sortDir = options?.pagination?.sortOrder === 'desc' ? 'DESC' : 'ASC';
 
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT ${COUNTRY_COLUMNS} FROM countries WHERE is_active = true ORDER BY ${sortCol} ${sortDir} LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
@@ -65,13 +65,13 @@ export class CountryRepository implements ICountryRepository {
   }
 
   async findById(id: string): Promise<Country | null> {
-    const result = await pool.query(`SELECT ${COUNTRY_COLUMNS} FROM countries WHERE id = $1`, [id]);
+    const result = await getPool().query(`SELECT ${COUNTRY_COLUMNS} FROM countries WHERE id = $1`, [id]);
     return result.rows[0] ? toEntity<Country>(result.rows[0] as Record<string, unknown>) : null;
   }
 
   async findOne(criteria: Record<string, unknown>): Promise<Country | null> {
     const { clause, values } = buildWhere(criteria);
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT ${COUNTRY_COLUMNS} FROM countries WHERE ${clause} LIMIT 1`,
       values,
     );
@@ -88,7 +88,7 @@ export class CountryRepository implements ICountryRepository {
 
     const { clause, values } = buildWhere(criteria);
 
-    const countResult = await pool.query(
+    const countResult = await getPool().query(
       `SELECT COUNT(*)::int AS count FROM countries WHERE ${clause}`,
       values,
     );
@@ -97,7 +97,7 @@ export class CountryRepository implements ICountryRepository {
     const sortCol = resolveColumn(options?.pagination?.sortBy ?? '') ?? 'created_at';
     const sortDir = options?.pagination?.sortOrder === 'desc' ? 'DESC' : 'ASC';
 
-    const dataResult = await pool.query(
+    const dataResult = await getPool().query(
       `SELECT ${COUNTRY_COLUMNS} FROM countries WHERE ${clause} ORDER BY ${sortCol} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset],
     );
@@ -106,7 +106,7 @@ export class CountryRepository implements ICountryRepository {
   }
 
   async save(input: CreateCountryInput): Promise<Country> {
-    const result = await pool.query(
+    const result = await getPool().query(
       `INSERT INTO countries (code, name) VALUES ($1, $2) RETURNING ${COUNTRY_COLUMNS}`,
       [input.code, input.name],
     );
@@ -131,7 +131,7 @@ export class CountryRepository implements ICountryRepository {
     updates.push('modified_at = CURRENT_TIMESTAMP');
     values.push(id);
 
-    const result = await pool.query(
+    const result = await getPool().query(
       `UPDATE countries SET ${updates.join(', ')} WHERE id = $${idx} RETURNING ${COUNTRY_COLUMNS}`,
       values,
     );
@@ -139,17 +139,17 @@ export class CountryRepository implements ICountryRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM countries WHERE id = $1', [id]);
+    const result = await getPool().query('DELETE FROM countries WHERE id = $1', [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     if (!criteria || Object.keys(criteria).length === 0) {
-      const result = await pool.query('SELECT COUNT(*)::int AS count FROM countries');
+      const result = await getPool().query('SELECT COUNT(*)::int AS count FROM countries');
       return result.rows[0]?.count ?? 0;
     }
     const { clause, values } = buildWhere(criteria);
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT COUNT(*)::int AS count FROM countries WHERE ${clause}`,
       values,
     );
@@ -158,7 +158,7 @@ export class CountryRepository implements ICountryRepository {
 
   async exists(criteria: Record<string, unknown>): Promise<boolean> {
     const { clause, values } = buildWhere(criteria);
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT EXISTS(SELECT 1 FROM countries WHERE ${clause}) AS found`,
       values,
     );

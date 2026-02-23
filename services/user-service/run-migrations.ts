@@ -11,7 +11,8 @@ dotenv.config({ path: path.join(__dirname, '..', '.env') });
 const migrationsDir = path.join(__dirname, '..', 'migrations');
 
 async function runMigrations(): Promise<void> {
-  const { pool } = await import('./src/infrastructure/db.js');
+  const { getPool } = await import('./src/infrastructure/db.js');
+  const pool = getPool();
   const files = await readdir(migrationsDir);
   const sqlFiles = files.filter((f) => f.endsWith('.sql')).sort();
   for (const file of sqlFiles) {

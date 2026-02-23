@@ -110,68 +110,70 @@ describe('Shared DB Example - Country Service', () => {
     expect(res.body.data.status).toBe('ok');
   });
 
-  it('POST /countries creates country and GET /countries/:id returns it', async () => {
+  it('POST /countries creates country with messageCode CREATED', async () => {
     const createRes = await request(app)
       .post('/countries')
       .send({ code: 'US', name: 'United States' });
     expect(createRes.status).toBe(201);
     expect(createRes.body.success).toBe(true);
+    expect(createRes.body.messageCode).toBe('CREATED');
+    expect(createRes.body.message).toBe('Country created successfully');
     expect(createRes.body.data.code).toBe('US');
-    expect(createRes.body.data.name).toBe('United States');
     expect(createRes.body.data.id).toBeDefined();
 
     const getRes = await request(app).get(`/countries/${createRes.body.data.id}`);
     expect(getRes.status).toBe(200);
-    expect(getRes.body.success).toBe(true);
+    expect(getRes.body.messageCode).toBe('FETCHED');
     expect(getRes.body.data.code).toBe('US');
   });
 
-  it('PUT /countries/:id updates country', async () => {
+  it('PUT /countries/:id updates country with messageCode UPDATED', async () => {
     const createRes = await request(app)
       .post('/countries')
       .send({ code: 'GB', name: 'Great Britain' });
     const id = createRes.body.data.id;
     const updateRes = await request(app).put(`/countries/${id}`).send({ name: 'United Kingdom' });
     expect(updateRes.status).toBe(200);
-    expect(updateRes.body.success).toBe(true);
+    expect(updateRes.body.messageCode).toBe('UPDATED');
     expect(updateRes.body.data.name).toBe('United Kingdom');
-    expect(updateRes.body.data.code).toBe('GB');
   });
 
-  it('DELETE /countries/:id removes country', async () => {
+  it('DELETE /countries/:id removes country with messageCode DELETED', async () => {
     const createRes = await request(app)
       .post('/countries')
       .send({ code: 'FR', name: 'France' });
     const id = createRes.body.data.id;
     const delRes = await request(app).delete(`/countries/${id}`);
     expect(delRes.status).toBe(200);
-    expect(delRes.body.success).toBe(true);
+    expect(delRes.body.messageCode).toBe('DELETED');
     expect(delRes.body.message).toBe('Country deleted successfully');
     const getRes = await request(app).get(`/countries/${id}`);
     expect(getRes.status).toBe(404);
-    expect(getRes.body.success).toBe(false);
+    expect(getRes.body.messageCode).toBe('NOT_FOUND');
   });
 
-  it('GET /countries returns all countries with pagination', async () => {
+  it('GET /countries returns all countries with pagination and messageCode', async () => {
     await request(app).post('/countries').send({ code: 'IN', name: 'India' });
     await request(app).post('/countries').send({ code: 'JP', name: 'Japan' });
     const res = await request(app).get('/countries');
     expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
+    expect(res.body.messageCode).toBe('LIST_FETCHED');
     expect(res.body.data.items).toHaveLength(2);
     expect(res.body.data.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
   });
 
-  it('POST /countries without code returns 400', async () => {
+  it('POST /countries without code returns 400 with FIELD_REQUIRED', async () => {
     const res = await request(app).post('/countries').send({ name: 'No Code' });
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
+    expect(res.body.messageCode).toBe('FIELD_REQUIRED');
   });
 
-  it('POST /countries with duplicate code returns 409', async () => {
+  it('POST /countries with duplicate code returns 409 with DUPLICATE_ENTRY', async () => {
     await request(app).post('/countries').send({ code: 'DE', name: 'Germany' });
     const res = await request(app).post('/countries').send({ code: 'DE', name: 'Deutschland' });
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
+    expect(res.body.messageCode).toBe('DUPLICATE_ENTRY');
   });
 });

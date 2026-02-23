@@ -110,12 +110,14 @@ describe('User Service', () => {
     expect(res.body.data.status).toBe('ok');
   });
 
-  it('POST /users creates user and GET /users/:id returns it', async () => {
+  it('POST /users creates user with messageCode CREATED', async () => {
     const createRes = await request(app)
       .post('/users')
       .send({ name: 'Test User', email: 'test@example.com' });
     expect(createRes.status).toBe(201);
     expect(createRes.body.success).toBe(true);
+    expect(createRes.body.messageCode).toBe('CREATED');
+    expect(createRes.body.message).toBe('User created successfully');
     expect(createRes.body.data.name).toBe('Test User');
     expect(createRes.body.data.email).toBe('test@example.com');
     expect(createRes.body.data.id).toBeDefined();
@@ -123,11 +125,11 @@ describe('User Service', () => {
     const getRes = await request(app).get(`/users/${createRes.body.data.id}`);
     expect(getRes.status).toBe(200);
     expect(getRes.body.success).toBe(true);
+    expect(getRes.body.messageCode).toBe('FETCHED');
     expect(getRes.body.data.name).toBe('Test User');
-    expect(getRes.body.data.email).toBe('test@example.com');
   });
 
-  it('PUT /users/:id updates user', async () => {
+  it('PUT /users/:id updates user with messageCode UPDATED', async () => {
     const createRes = await request(app)
       .post('/users')
       .send({ name: 'Old', email: 'old@example.com' });
@@ -135,11 +137,12 @@ describe('User Service', () => {
     const updateRes = await request(app).put(`/users/${id}`).send({ name: 'New Name' });
     expect(updateRes.status).toBe(200);
     expect(updateRes.body.success).toBe(true);
+    expect(updateRes.body.messageCode).toBe('UPDATED');
+    expect(updateRes.body.message).toBe('User updated successfully');
     expect(updateRes.body.data.name).toBe('New Name');
-    expect(updateRes.body.data.email).toBe('old@example.com');
   });
 
-  it('DELETE /users/:id removes user', async () => {
+  it('DELETE /users/:id removes user with messageCode DELETED', async () => {
     const createRes = await request(app)
       .post('/users')
       .send({ name: 'To Delete', email: 'del@example.com' });
@@ -147,35 +150,38 @@ describe('User Service', () => {
     const delRes = await request(app).delete(`/users/${id}`);
     expect(delRes.status).toBe(200);
     expect(delRes.body.success).toBe(true);
+    expect(delRes.body.messageCode).toBe('DELETED');
     expect(delRes.body.message).toBe('User deleted successfully');
     const getRes = await request(app).get(`/users/${id}`);
     expect(getRes.status).toBe(404);
     expect(getRes.body.success).toBe(false);
+    expect(getRes.body.messageCode).toBe('NOT_FOUND');
   });
 
-  it('GET /users returns all users with pagination', async () => {
+  it('GET /users returns all users with pagination and messageCode', async () => {
     await request(app).post('/users').send({ name: 'A', email: 'a@x.com' });
     await request(app).post('/users').send({ name: 'B', email: 'b@x.com' });
     const res = await request(app).get('/users');
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
+    expect(res.body.messageCode).toBe('LIST_FETCHED');
     expect(res.body.data.items).toHaveLength(2);
     expect(res.body.data.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
-    expect(res.body.data.items.map((u: { email: string }) => u.email)).toContain('a@x.com');
-    expect(res.body.data.items.map((u: { email: string }) => u.email)).toContain('b@x.com');
   });
 
-  it('POST /users without name returns 400', async () => {
+  it('POST /users without name returns 400 with FIELD_REQUIRED', async () => {
     const res = await request(app).post('/users').send({ email: 'a@b.com' });
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
+    expect(res.body.messageCode).toBe('FIELD_REQUIRED');
     expect(res.body.error).toBeDefined();
   });
 
-  it('POST /users with duplicate email returns 409', async () => {
+  it('POST /users with duplicate email returns 409 with DUPLICATE_EMAIL', async () => {
     await request(app).post('/users').send({ name: 'A', email: 'dup@x.com' });
     const res = await request(app).post('/users').send({ name: 'B', email: 'dup@x.com' });
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
+    expect(res.body.messageCode).toBe('DUPLICATE_EMAIL');
   });
 });

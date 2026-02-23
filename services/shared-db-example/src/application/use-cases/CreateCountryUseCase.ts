@@ -1,4 +1,5 @@
 import { ConflictError } from '@rajkumarganesan93/infrastructure';
+import { MessageCode } from '@rajkumarganesan93/api';
 import type { ICountryRepository } from '../../domain/repositories/ICountryRepository.js';
 import type { Country } from '../../domain/entities/Country.js';
 
@@ -13,7 +14,7 @@ export class CreateCountryUseCase {
   async execute(input: CreateCountryInput): Promise<Country> {
     const existing = await this.countryRepository.findOne({ code: input.code });
     if (existing) {
-      throw new ConflictError('Country with this code already exists');
+      throw new ConflictError(MessageCode.DUPLICATE_ENTRY, { resource: 'Country', field: 'code' });
     }
     return this.countryRepository.save(input);
   }

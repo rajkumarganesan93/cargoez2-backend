@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { NotFoundError } from '@rajkumarganesan93/infrastructure';
-import { success, error, successPaginated } from '@rajkumarganesan93/api';
+import { success, error, successPaginated, MessageCode } from '@rajkumarganesan93/api';
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
 import { CreateCountryUseCase } from '../../application/use-cases/CreateCountryUseCase.js';
 import { GetAllCountriesUseCase } from '../../application/use-cases/GetAllCountriesUseCase.js';
@@ -22,15 +22,14 @@ export class CountryController {
   create = async (req: Request, res: Response): Promise<Response> => {
     const { code, name } = req.body;
     if (!code || !name) {
-      return res.status(400).json(error('code and name are required', 400));
+      return res.status(400).json(error(MessageCode.FIELD_REQUIRED, { field: 'code and name' }));
     }
     const country = await this.createCountryUseCase.execute({ code, name });
-    return res.status(201).json(success({
-      id: country.id,
-      code: country.code,
-      name: country.name,
-      createdAt: country.createdAt instanceof Date ? country.createdAt.toISOString() : country.createdAt,
-    }));
+    return res.status(201).json(success(
+      { id: country.id, code: country.code, name: country.name, createdAt: country.createdAt },
+      MessageCode.CREATED,
+      { resource: 'Country' },
+    ));
   };
 
   getAll = async (req: Request, res: Response): Promise<Response> => {
@@ -42,43 +41,46 @@ export class CountryController {
       id: country.id,
       code: country.code,
       name: country.name,
-      createdAt: country.createdAt instanceof Date ? country.createdAt.toISOString() : country.createdAt,
+      createdAt: country.createdAt,
     }));
-    return res.status(200).json(successPaginated(data, result.meta));
+    return res.status(200).json(successPaginated(
+      data,
+      result.meta,
+      MessageCode.LIST_FETCHED,
+      { resource: 'Country' },
+    ));
   };
 
   getById = async (req: Request, res: Response): Promise<Response> => {
     const { id } = req.params;
     const country = await this.getCountryByIdUseCase.execute(id);
-    if (!country) throw new NotFoundError('Country not found');
-    return res.status(200).json(success({
-      id: country.id,
-      code: country.code,
-      name: country.name,
-      createdAt: country.createdAt instanceof Date ? country.createdAt.toISOString() : country.createdAt,
-    }));
+    if (!country) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Country' });
+    return res.status(200).json(success(
+      { id: country.id, code: country.code, name: country.name, createdAt: country.createdAt },
+      MessageCode.FETCHED,
+      { resource: 'Country' },
+    ));
   };
 
   update = async (req: Request, res: Response): Promise<Response> => {
     const { id } = req.params;
     const { code, name } = req.body;
     if (!code && !name) {
-      return res.status(400).json(error('At least one of code or name is required', 400));
+      return res.status(400).json(error(MessageCode.FIELD_REQUIRED, { field: 'code or name' }));
     }
     const country = await this.updateCountryUseCase.execute(id, { code, name });
-    if (!country) throw new NotFoundError('Country not found');
-    return res.status(200).json(success({
-      id: country.id,
-      code: country.code,
-      name: country.name,
-      createdAt: country.createdAt instanceof Date ? country.createdAt.toISOString() : country.createdAt,
-    }));
+    if (!country) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Country' });
+    return res.status(200).json(success(
+      { id: country.id, code: country.code, name: country.name, createdAt: country.createdAt },
+      MessageCode.UPDATED,
+      { resource: 'Country' },
+    ));
   };
 
   delete = async (req: Request, res: Response): Promise<Response> => {
     const { id } = req.params;
     const deleted = await this.deleteCountryUseCase.execute(id);
-    if (!deleted) throw new NotFoundError('Country not found');
-    return res.status(200).json(success(undefined, 'Country deleted successfully'));
+    if (!deleted) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Country' });
+    return res.status(200).json(success(undefined, MessageCode.DELETED, { resource: 'Country' }));
   };
 }

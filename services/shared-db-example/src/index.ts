@@ -1,8 +1,15 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: resolve(__dirname, '..', '.env') });
+
 import express from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { createLogger } from '@rajkumarganesan93/application';
 import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
+import { MessageCode } from '@rajkumarganesan93/api';
 import { swaggerSpec } from './presentation/swagger.js';
 import { createCountryRoutes } from './presentation/routes.js';
 import { CountryController } from './presentation/controllers/CountryController.js';
@@ -37,7 +44,7 @@ app.use(requestLogger(logger));
 app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 app.use(createCountryRoutes(countryController));
 
-app.use((_req, _res, next) => next(new NotFoundError('Not found')));
+app.use((_req, _res, next) => next(new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Route' })));
 app.use(errorHandler({ logger }));
 
 app.listen(PORT, () => {

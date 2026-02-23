@@ -1,4 +1,4 @@
-import { pool } from '../db.js';
+import { getPool } from '../db.js';
 import { toEntity } from '@rajkumarganesan93/application';
 import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 import type {
@@ -50,13 +50,13 @@ export class UserRepository implements IUserRepository {
     const limit = Math.min(options?.pagination?.limit ?? 20, 100);
     const offset = (page - 1) * limit;
 
-    const countResult = await pool.query('SELECT COUNT(*)::int AS count FROM users WHERE is_active = true');
+    const countResult = await getPool().query('SELECT COUNT(*)::int AS count FROM users WHERE is_active = true');
     const total: number = countResult.rows[0]?.count ?? 0;
 
     const sortCol = resolveColumn(options?.pagination?.sortBy ?? '') ?? 'created_at';
     const sortDir = options?.pagination?.sortOrder === 'desc' ? 'DESC' : 'ASC';
 
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT ${USER_COLUMNS} FROM users WHERE is_active = true ORDER BY ${sortCol} ${sortDir} LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
@@ -65,13 +65,13 @@ export class UserRepository implements IUserRepository {
   }
 
   async findById(id: string): Promise<User | null> {
-    const result = await pool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [id]);
+    const result = await getPool().query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [id]);
     return result.rows[0] ? toEntity<User>(result.rows[0] as Record<string, unknown>) : null;
   }
 
   async findOne(criteria: Record<string, unknown>): Promise<User | null> {
     const { clause, values } = buildWhere(criteria);
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT ${USER_COLUMNS} FROM users WHERE ${clause} LIMIT 1`,
       values,
     );
@@ -88,7 +88,7 @@ export class UserRepository implements IUserRepository {
 
     const { clause, values } = buildWhere(criteria);
 
-    const countResult = await pool.query(
+    const countResult = await getPool().query(
       `SELECT COUNT(*)::int AS count FROM users WHERE ${clause}`,
       values,
     );
@@ -97,7 +97,7 @@ export class UserRepository implements IUserRepository {
     const sortCol = resolveColumn(options?.pagination?.sortBy ?? '') ?? 'created_at';
     const sortDir = options?.pagination?.sortOrder === 'desc' ? 'DESC' : 'ASC';
 
-    const dataResult = await pool.query(
+    const dataResult = await getPool().query(
       `SELECT ${USER_COLUMNS} FROM users WHERE ${clause} ORDER BY ${sortCol} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset],
     );
@@ -106,7 +106,7 @@ export class UserRepository implements IUserRepository {
   }
 
   async save(input: CreateUserInput): Promise<User> {
-    const result = await pool.query(
+    const result = await getPool().query(
       `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING ${USER_COLUMNS}`,
       [input.name, input.email],
     );
@@ -131,7 +131,7 @@ export class UserRepository implements IUserRepository {
     updates.push('modified_at = CURRENT_TIMESTAMP');
     values.push(id);
 
-    const result = await pool.query(
+    const result = await getPool().query(
       `UPDATE users SET ${updates.join(', ')} WHERE id = $${idx} RETURNING ${USER_COLUMNS}`,
       values,
     );
@@ -139,17 +139,17 @@ export class UserRepository implements IUserRepository {
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    const result = await getPool().query('DELETE FROM users WHERE id = $1', [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     if (!criteria || Object.keys(criteria).length === 0) {
-      const result = await pool.query('SELECT COUNT(*)::int AS count FROM users');
+      const result = await getPool().query('SELECT COUNT(*)::int AS count FROM users');
       return result.rows[0]?.count ?? 0;
     }
     const { clause, values } = buildWhere(criteria);
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT COUNT(*)::int AS count FROM users WHERE ${clause}`,
       values,
     );
@@ -158,7 +158,7 @@ export class UserRepository implements IUserRepository {
 
   async exists(criteria: Record<string, unknown>): Promise<boolean> {
     const { clause, values } = buildWhere(criteria);
-    const result = await pool.query(
+    const result = await getPool().query(
       `SELECT EXISTS(SELECT 1 FROM users WHERE ${clause}) AS found`,
       values,
     );
