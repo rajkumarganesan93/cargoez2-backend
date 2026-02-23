@@ -36,3 +36,6 @@ terminals/
 
 # Temp
 commit-msg.txt
+
+# GitHub workflows (PAT needs workflow scope to push)
+.github/

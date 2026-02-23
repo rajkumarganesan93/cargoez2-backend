@@ -10,19 +10,37 @@ import { GetUserByIdUseCase } from '../src/application/use-cases/GetUserByIdUseC
 import { UpdateUserUseCase } from '../src/application/use-cases/UpdateUserUseCase.js';
 import { DeleteUserUseCase } from '../src/application/use-cases/DeleteUserUseCase.js';
 import type { User } from '../src/domain/entities/User.js';
+import type { IUserRepository } from '../src/domain/repositories/IUserRepository.js';
 
 const mockUsers: Map<string, User> = new Map();
-const mockRepo = {
+
+const mockRepo: IUserRepository = {
   findAll: async () => {
     const items = Array.from(mockUsers.values());
     return {
       items,
-      meta: { total: items.length, page: 1, limit: 100, totalPages: 1 },
+      meta: { total: items.length, page: 1, limit: 20, totalPages: 1 },
     };
   },
   findById: async (id: string) => mockUsers.get(id) ?? null,
-  findByEmail: async (email: string) =>
-    Array.from(mockUsers.values()).find((u) => u.email === email) ?? null,
+  findOne: async (criteria: Record<string, unknown>) => {
+    for (const user of mockUsers.values()) {
+      const rec = user as unknown as Record<string, unknown>;
+      const match = Object.entries(criteria).every(([key, value]) => rec[key] === value);
+      if (match) return user;
+    }
+    return null;
+  },
+  findMany: async (criteria: Record<string, unknown>) => {
+    const items = Array.from(mockUsers.values()).filter((user) => {
+      const rec = user as unknown as Record<string, unknown>;
+      return Object.entries(criteria).every(([key, value]) => rec[key] === value);
+    });
+    return {
+      items,
+      meta: { total: items.length, page: 1, limit: 20, totalPages: 1 },
+    };
+  },
   save: async (input: { name: string; email: string }) => {
     const id = crypto.randomUUID();
     const user: User = {
@@ -45,10 +63,24 @@ const mockRepo = {
     mockUsers.set(id, user);
     return user;
   },
-  delete: async (id: string) => {
-    return mockUsers.delete(id);
+  delete: async (id: string) => mockUsers.delete(id),
+  count: async (criteria?: Record<string, unknown>) => {
+    if (!criteria || Object.keys(criteria).length === 0) return mockUsers.size;
+    return Array.from(mockUsers.values()).filter((user) => {
+      const rec = user as unknown as Record<string, unknown>;
+      return Object.entries(criteria).every(([key, value]) => rec[key] === value);
+    }).length;
+  },
+  exists: async (criteria: Record<string, unknown>) => {
+    for (const user of mockUsers.values()) {
+      const rec = user as unknown as Record<string, unknown>;
+      const match = Object.entries(criteria).every(([key, value]) => rec[key] === value);
+      if (match) return true;
+    }
+    return false;
   },
 };
+
 const createUserUseCase = new CreateUserUseCase(mockRepo);
 const getAllUsersUseCase = new GetAllUsersUseCase(mockRepo);
 const getUserByIdUseCase = new GetUserByIdUseCase(mockRepo);
@@ -59,7 +91,7 @@ const controller = new UserController(
   getAllUsersUseCase,
   getUserByIdUseCase,
   updateUserUseCase,
-  deleteUserUseCase
+  deleteUserUseCase,
 );
 
 const logger = createLogger('user-service-test');
@@ -128,7 +160,7 @@ describe('User Service', () => {
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
     expect(res.body.data.items).toHaveLength(2);
-    expect(res.body.data.meta).toEqual({ total: 2, page: 1, limit: 100, totalPages: 1 });
+    expect(res.body.data.meta).toEqual({ total: 2, page: 1, limit: 20, totalPages: 1 });
     expect(res.body.data.items.map((u: { email: string }) => u.email)).toContain('a@x.com');
     expect(res.body.data.items.map((u: { email: string }) => u.email)).toContain('b@x.com');
   });
@@ -138,5 +170,12 @@ describe('User Service', () => {
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
     expect(res.body.error).toBeDefined();
+  });
+
+  it('POST /users with duplicate email returns 409', async () => {
+    await request(app).post('/users').send({ name: 'A', email: 'dup@x.com' });
+    const res = await request(app).post('/users').send({ name: 'B', email: 'dup@x.com' });
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
   });
 });

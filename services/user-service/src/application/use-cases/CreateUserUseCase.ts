@@ -11,7 +11,7 @@ export class CreateUserUseCase {
   constructor(private readonly userRepository: IUserRepository) {}
 
   async execute(input: CreateUserInput): Promise<User> {
-    const existing = await this.userRepository.findByEmail(input.email);
+    const existing = await this.userRepository.findOne({ email: input.email });
     if (existing) {
       throw new ConflictError('User with this email already exists');
     }

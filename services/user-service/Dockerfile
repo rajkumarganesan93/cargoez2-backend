@@ -4,7 +4,6 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages ./packages
 COPY services/user-service/package.json ./services/user-service/
-COPY services/auth-service/package.json ./services/auth-service/
 
 RUN npm install
 
@@ -17,7 +16,6 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages ./packages
 COPY services/user-service/package.json ./services/user-service/
-COPY services/auth-service/package.json ./services/auth-service/
 
 RUN npm install --omit=dev
 

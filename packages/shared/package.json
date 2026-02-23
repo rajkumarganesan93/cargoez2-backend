@@ -1,6 +1,6 @@
 {
   "name": "@rajkumarganesan93/shared",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": false,
   "type": "module",
   "main": "dist/index.js",
@@ -10,6 +10,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@rajkumarganesan93/domain": "*",
     "dotenv": "^16.4.5"
   },
   "devDependencies": {

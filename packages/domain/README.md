@@ -15,7 +15,7 @@ Requires `.npmrc` configuration (see [root README](../../README.md#installing-pa
 | Export              | Type      | Purpose                                      |
 | ------------------- | --------- | -------------------------------------------- |
 | `BaseEntity`        | interface | Common audit fields for all entities          |
-| `IRepository`       | interface | Generic CRUD repository contract              |
+| `IRepository`       | interface | Generic repository contract (9 methods)       |
 | `PaginationRequest` | interface | Page, limit, sort params for list queries     |
 | `PaginatedResult`   | interface | Paginated response with items + meta          |
 | `ListOptions`       | interface | Pagination + filters for findAll              |
@@ -38,7 +38,6 @@ export interface Product extends BaseEntity {
   name: string;
   sku: string;
   price: number;
-  categoryId: string;
 }
 ```
 
@@ -58,28 +57,48 @@ interface BaseEntity {
 
 ### Define a repository interface
 
+All service repositories **must** extend `IRepository`. Do not create standalone repository interfaces with ad-hoc `findByX` methods.
+
 ```typescript
 import type { IRepository } from '@rajkumarganesan93/domain';
 import type { Product } from '../entities/Product.js';
 
-interface CreateProductInput {
-  name: string;
-  sku: string;
-  price: number;
-  categoryId: string;
-}
+interface CreateProductInput { name: string; sku: string; price: number; }
+interface UpdateProductInput { name?: string; price?: number; }
 
-interface UpdateProductInput {
-  name?: string;
-  price?: number;
-}
-
-export interface IProductRepository extends IRepository<Product, CreateProductInput, UpdateProductInput> {
-  findBySku(sku: string): Promise<Product | null>;
-}
+// Correct: extends IRepository
+export interface IProductRepository extends IRepository<Product, CreateProductInput, UpdateProductInput> {}
 ```
 
-`IRepository` gives you `findById`, `findAll` (paginated), `save`, `update`, `delete` out of the box.
+### IRepository methods
+
+`IRepository<T, CreateInput, UpdateInput>` provides 9 methods:
+
+| Method | Signature | Purpose |
+| ------ | --------- | ------- |
+| `findById` | `(id: string) => Promise<T \| null>` | Fetch a single record by primary key |
+| `findAll` | `(options?: ListOptions) => Promise<PaginatedResult<T>>` | Paginated list of all records |
+| `findOne` | `(criteria: Record<string, unknown>) => Promise<T \| null>` | Find first record matching criteria |
+| `findMany` | `(criteria: Record<string, unknown>, options?: ListOptions) => Promise<PaginatedResult<T>>` | Filtered paginated list |
+| `save` | `(input: CreateInput) => Promise<T>` | Create a new record |
+| `update` | `(id: string, input: UpdateInput) => Promise<T \| null>` | Update a record by ID |
+| `delete` | `(id: string) => Promise<boolean>` | Delete a record by ID |
+| `count` | `(criteria?: Record<string, unknown>) => Promise<number>` | Count records matching criteria |
+| `exists` | `(criteria: Record<string, unknown>) => Promise<boolean>` | Check if any record matches |
+
+Instead of domain-specific methods like `findByEmail` or `findBySku`, use the generic `findOne`:
+
+```typescript
+// Instead of: repo.findByEmail('user@example.com')
+const user = await repo.findOne({ email: 'user@example.com' });
+
+// Instead of: repo.findBySku('W-001')
+const product = await repo.findOne({ sku: 'W-001' });
+
+// Check for duplicates before saving:
+const exists = await repo.exists({ email: input.email });
+if (exists) throw new ConflictError('Email already in use');
+```
 
 ### Pagination
 
@@ -94,15 +113,6 @@ async function listProducts(options?: ListOptions): Promise<PaginatedResult<Prod
 }
 ```
 
-### API response types
-
-All API responses follow the same shape:
-
-```typescript
-// Success: { success: true, data: ..., timestamp: '...' }
-// Error:   { success: false, error: '...', statusCode: 400, timestamp: '...' }
-```
-
 ### Column mapping
 
 Map entity properties to DB columns for security/obfuscation:
@@ -114,7 +124,6 @@ const productColumnMap: ColumnMap = {
   name: 'prd_nm',
   sku: 'prd_sku',
   price: 'prd_prc',
-  categoryId: 'cat_id',
 };
 ```
 
@@ -125,3 +134,5 @@ When no `ColumnMap` is provided, the mapper defaults to `snake_case` conversion 
 1. **Entities use camelCase only** -- never snake_case in entity interfaces
 2. **No framework imports** -- domain package must stay pure (no Express, pg, etc.)
 3. **Extend BaseEntity** -- every entity must extend it; the DB migration must include the corresponding columns
+4. **Extend IRepository** -- every service repository interface must extend `IRepository`; do not define standalone CRUD interfaces
+5. **Use findOne for lookups** -- use `findOne({ field: value })` instead of bespoke `findByField` methods

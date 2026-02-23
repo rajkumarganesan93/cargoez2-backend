@@ -9,7 +9,7 @@ export class UpdateUserUseCase {
     const existing = await this.userRepository.findById(id);
     if (!existing) return null;
     if (input.email && input.email !== existing.email) {
-      const byEmail = await this.userRepository.findByEmail(input.email);
+      const byEmail = await this.userRepository.findOne({ email: input.email });
       if (byEmail) throw new ConflictError('User with this email already exists');
     }
     return this.userRepository.update(id, input);

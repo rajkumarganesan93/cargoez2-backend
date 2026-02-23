@@ -34,7 +34,7 @@ export class CreateProductUseCase {
   async execute(input: CreateProductInput): Promise<Product> {
     if (!input.name) throw new BadRequestError('Product name is required');
 
-    const existing = await this.repo.findBySku(input.sku);
+    const existing = await this.repo.findOne({ sku: input.sku });
     if (existing) throw new ConflictError('Product with this SKU already exists');
 
     return this.repo.save(input);

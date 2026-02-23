@@ -1,5 +1,5 @@
+import type { IRepository } from '@rajkumarganesan93/domain';
 import type { User } from '../entities/User.js';
-import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 
 export interface CreateUserInput {
   name: string;
@@ -11,11 +11,4 @@ export interface UpdateUserInput {
   email?: string;
 }
 
-export interface IUserRepository {
-  findAll(options?: ListOptions): Promise<PaginatedResult<User>>;
-  findById(id: string): Promise<User | null>;
-  save(input: CreateUserInput): Promise<User>;
-  update(id: string, input: UpdateUserInput): Promise<User | null>;
-  delete(id: string): Promise<boolean>;
-  findByEmail(email: string): Promise<User | null>;
-}
+export interface IUserRepository extends IRepository<User, CreateUserInput, UpdateUserInput> {}

@@ -1,11 +1,14 @@
 import { Request, Response } from 'express';
 import { NotFoundError } from '@rajkumarganesan93/infrastructure';
 import { success, error, successPaginated } from '@rajkumarganesan93/api';
+import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
 import { CreateUserUseCase } from '../../application/use-cases/CreateUserUseCase.js';
 import { GetAllUsersUseCase } from '../../application/use-cases/GetAllUsersUseCase.js';
 import { GetUserByIdUseCase } from '../../application/use-cases/GetUserByIdUseCase.js';
 import { UpdateUserUseCase } from '../../application/use-cases/UpdateUserUseCase.js';
 import { DeleteUserUseCase } from '../../application/use-cases/DeleteUserUseCase.js';
+
+const ALLOWED_SORT_FIELDS = ['name', 'email', 'createdAt', 'modifiedAt'];
 
 export class UserController {
   constructor(
@@ -13,7 +16,7 @@ export class UserController {
     private readonly getAllUsersUseCase: GetAllUsersUseCase,
     private readonly getUserByIdUseCase: GetUserByIdUseCase,
     private readonly updateUserUseCase: UpdateUserUseCase,
-    private readonly deleteUserUseCase: DeleteUserUseCase
+    private readonly deleteUserUseCase: DeleteUserUseCase,
   ) {}
 
   create = async (req: Request, res: Response): Promise<Response> => {
@@ -22,23 +25,19 @@ export class UserController {
       return res.status(400).json(error('name and email are required', 400));
     }
     const user = await this.createUserUseCase.execute({ name, email });
-    const data = {
+    return res.status(201).json(success({
       id: user.id,
       name: user.name,
       email: user.email,
-      createdAt: user.createdAt.toISOString(),
-    };
-    return res.status(201).json(success(data));
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
+    }));
   };
 
   getAll = async (req: Request, res: Response): Promise<Response> => {
-    const page = Math.max(1, parseInt(String(req.query.page), 10) || 1);
-    const limit = Math.min(500, Math.max(1, parseInt(String(req.query.limit), 10) || 100));
-    const sortBy = req.query.sortBy as string | undefined;
-    const sortOrder = (req.query.sortOrder as 'asc' | 'desc') ?? 'asc';
-    const result = await this.getAllUsersUseCase.execute({
-      pagination: { page, limit, sortBy, sortOrder },
+    const pagination = parsePaginationFromQuery(req.query as Record<string, unknown>, {
+      allowedSortFields: ALLOWED_SORT_FIELDS,
     });
+    const result = await this.getAllUsersUseCase.execute({ pagination });
     const data = result.items.map((user) => ({
       id: user.id,
       name: user.name,
@@ -52,13 +51,12 @@ export class UserController {
     const { id } = req.params;
     const user = await this.getUserByIdUseCase.execute(id);
     if (!user) throw new NotFoundError('User not found');
-    const data = {
+    return res.status(200).json(success({
       id: user.id,
       name: user.name,
       email: user.email,
-      createdAt: user.createdAt.toISOString(),
-    };
-    return res.status(200).json(success(data));
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
+    }));
   };
 
   update = async (req: Request, res: Response): Promise<Response> => {
@@ -69,13 +67,12 @@ export class UserController {
     }
     const user = await this.updateUserUseCase.execute(id, { name, email });
     if (!user) throw new NotFoundError('User not found');
-    const data = {
+    return res.status(200).json(success({
       id: user.id,
       name: user.name,
       email: user.email,
-      createdAt: user.createdAt.toISOString(),
-    };
-    return res.status(200).json(success(data));
+      createdAt: user.createdAt instanceof Date ? user.createdAt.toISOString() : user.createdAt,
+    }));
   };
 
   delete = async (req: Request, res: Response): Promise<Response> => {

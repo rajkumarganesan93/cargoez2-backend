@@ -2,19 +2,19 @@ import { pool } from '../db.js';
 import { toEntity } from '@rajkumarganesan93/application';
 import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
 import type {
-  IUserRepository,
-  CreateUserInput,
-  UpdateUserInput,
-} from '../../domain/repositories/IUserRepository.js';
-import type { User } from '../../domain/entities/User.js';
+  ICountryRepository,
+  CreateCountryInput,
+  UpdateCountryInput,
+} from '../../domain/repositories/ICountryRepository.js';
+import type { Country } from '../../domain/entities/Country.js';
 
-const USER_COLUMNS =
-  'id, name, email, is_active, created_at, modified_at, created_by, modified_by, tenant_id';
+const COUNTRY_COLUMNS =
+  'id, code, name, is_active, created_at, modified_at, created_by, modified_by, tenant_id';
 
 const ALLOWED_COLUMNS: Record<string, string> = {
   id: 'id',
+  code: 'code',
   name: 'name',
-  email: 'email',
   isActive: 'is_active',
   createdAt: 'created_at',
   modifiedAt: 'modified_at',
@@ -44,44 +44,44 @@ function buildWhere(
   return { clause, values };
 }
 
-export class UserRepository implements IUserRepository {
-  async findAll(options?: ListOptions): Promise<PaginatedResult<User>> {
+export class CountryRepository implements ICountryRepository {
+  async findAll(options?: ListOptions): Promise<PaginatedResult<Country>> {
     const page = options?.pagination?.page ?? 1;
     const limit = Math.min(options?.pagination?.limit ?? 20, 100);
     const offset = (page - 1) * limit;
 
-    const countResult = await pool.query('SELECT COUNT(*)::int AS count FROM users WHERE is_active = true');
+    const countResult = await pool.query('SELECT COUNT(*)::int AS count FROM countries WHERE is_active = true');
     const total: number = countResult.rows[0]?.count ?? 0;
 
     const sortCol = resolveColumn(options?.pagination?.sortBy ?? '') ?? 'created_at';
     const sortDir = options?.pagination?.sortOrder === 'desc' ? 'DESC' : 'ASC';
 
     const result = await pool.query(
-      `SELECT ${USER_COLUMNS} FROM users WHERE is_active = true ORDER BY ${sortCol} ${sortDir} LIMIT $1 OFFSET $2`,
+      `SELECT ${COUNTRY_COLUMNS} FROM countries WHERE is_active = true ORDER BY ${sortCol} ${sortDir} LIMIT $1 OFFSET $2`,
       [limit, offset],
     );
-    const items = result.rows.map((row) => toEntity<User>(row as Record<string, unknown>));
+    const items = result.rows.map((row) => toEntity<Country>(row as Record<string, unknown>));
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 } };
   }
 
-  async findById(id: string): Promise<User | null> {
-    const result = await pool.query(`SELECT ${USER_COLUMNS} FROM users WHERE id = $1`, [id]);
-    return result.rows[0] ? toEntity<User>(result.rows[0] as Record<string, unknown>) : null;
+  async findById(id: string): Promise<Country | null> {
+    const result = await pool.query(`SELECT ${COUNTRY_COLUMNS} FROM countries WHERE id = $1`, [id]);
+    return result.rows[0] ? toEntity<Country>(result.rows[0] as Record<string, unknown>) : null;
   }
 
-  async findOne(criteria: Record<string, unknown>): Promise<User | null> {
+  async findOne(criteria: Record<string, unknown>): Promise<Country | null> {
     const { clause, values } = buildWhere(criteria);
     const result = await pool.query(
-      `SELECT ${USER_COLUMNS} FROM users WHERE ${clause} LIMIT 1`,
+      `SELECT ${COUNTRY_COLUMNS} FROM countries WHERE ${clause} LIMIT 1`,
       values,
     );
-    return result.rows[0] ? toEntity<User>(result.rows[0] as Record<string, unknown>) : null;
+    return result.rows[0] ? toEntity<Country>(result.rows[0] as Record<string, unknown>) : null;
   }
 
   async findMany(
     criteria: Record<string, unknown>,
     options?: ListOptions,
-  ): Promise<PaginatedResult<User>> {
+  ): Promise<PaginatedResult<Country>> {
     const page = options?.pagination?.page ?? 1;
     const limit = Math.min(options?.pagination?.limit ?? 20, 100);
     const offset = (page - 1) * limit;
@@ -89,7 +89,7 @@ export class UserRepository implements IUserRepository {
     const { clause, values } = buildWhere(criteria);
 
     const countResult = await pool.query(
-      `SELECT COUNT(*)::int AS count FROM users WHERE ${clause}`,
+      `SELECT COUNT(*)::int AS count FROM countries WHERE ${clause}`,
       values,
     );
     const total: number = countResult.rows[0]?.count ?? 0;
@@ -98,33 +98,33 @@ export class UserRepository implements IUserRepository {
     const sortDir = options?.pagination?.sortOrder === 'desc' ? 'DESC' : 'ASC';
 
     const dataResult = await pool.query(
-      `SELECT ${USER_COLUMNS} FROM users WHERE ${clause} ORDER BY ${sortCol} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
+      `SELECT ${COUNTRY_COLUMNS} FROM countries WHERE ${clause} ORDER BY ${sortCol} ${sortDir} LIMIT $${values.length + 1} OFFSET $${values.length + 2}`,
       [...values, limit, offset],
     );
-    const items = dataResult.rows.map((row) => toEntity<User>(row as Record<string, unknown>));
+    const items = dataResult.rows.map((row) => toEntity<Country>(row as Record<string, unknown>));
     return { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 } };
   }
 
-  async save(input: CreateUserInput): Promise<User> {
+  async save(input: CreateCountryInput): Promise<Country> {
     const result = await pool.query(
-      `INSERT INTO users (name, email) VALUES ($1, $2) RETURNING ${USER_COLUMNS}`,
-      [input.name, input.email],
+      `INSERT INTO countries (code, name) VALUES ($1, $2) RETURNING ${COUNTRY_COLUMNS}`,
+      [input.code, input.name],
     );
-    return toEntity<User>(result.rows[0] as Record<string, unknown>);
+    return toEntity<Country>(result.rows[0] as Record<string, unknown>);
   }
 
-  async update(id: string, input: UpdateUserInput): Promise<User | null> {
+  async update(id: string, input: UpdateCountryInput): Promise<Country | null> {
     const updates: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
+    if (input.code !== undefined) {
+      updates.push(`code = $${idx++}`);
+      values.push(input.code);
+    }
     if (input.name !== undefined) {
       updates.push(`name = $${idx++}`);
       values.push(input.name);
-    }
-    if (input.email !== undefined) {
-      updates.push(`email = $${idx++}`);
-      values.push(input.email);
     }
     if (updates.length === 0) return this.findById(id);
 
@@ -132,25 +132,25 @@ export class UserRepository implements IUserRepository {
     values.push(id);
 
     const result = await pool.query(
-      `UPDATE users SET ${updates.join(', ')} WHERE id = $${idx} RETURNING ${USER_COLUMNS}`,
+      `UPDATE countries SET ${updates.join(', ')} WHERE id = $${idx} RETURNING ${COUNTRY_COLUMNS}`,
       values,
     );
-    return result.rows[0] ? toEntity<User>(result.rows[0] as Record<string, unknown>) : null;
+    return result.rows[0] ? toEntity<Country>(result.rows[0] as Record<string, unknown>) : null;
   }
 
   async delete(id: string): Promise<boolean> {
-    const result = await pool.query('DELETE FROM users WHERE id = $1', [id]);
+    const result = await pool.query('DELETE FROM countries WHERE id = $1', [id]);
     return (result.rowCount ?? 0) > 0;
   }
 
   async count(criteria?: Record<string, unknown>): Promise<number> {
     if (!criteria || Object.keys(criteria).length === 0) {
-      const result = await pool.query('SELECT COUNT(*)::int AS count FROM users');
+      const result = await pool.query('SELECT COUNT(*)::int AS count FROM countries');
       return result.rows[0]?.count ?? 0;
     }
     const { clause, values } = buildWhere(criteria);
     const result = await pool.query(
-      `SELECT COUNT(*)::int AS count FROM users WHERE ${clause}`,
+      `SELECT COUNT(*)::int AS count FROM countries WHERE ${clause}`,
       values,
     );
     return result.rows[0]?.count ?? 0;
@@ -159,7 +159,7 @@ export class UserRepository implements IUserRepository {
   async exists(criteria: Record<string, unknown>): Promise<boolean> {
     const { clause, values } = buildWhere(criteria);
     const result = await pool.query(
-      `SELECT EXISTS(SELECT 1 FROM users WHERE ${clause}) AS found`,
+      `SELECT EXISTS(SELECT 1 FROM countries WHERE ${clause}) AS found`,
       values,
     );
     return result.rows[0]?.found ?? false;

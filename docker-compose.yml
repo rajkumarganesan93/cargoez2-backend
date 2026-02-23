@@ -19,8 +19,9 @@ services:
       retries: 5
 
   user-service:
-    context: .
-    dockerfile: services/user-service/Dockerfile
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
     container_name: cargoez-user-service
     env_file: ./services/user-service/.env
     environment:
@@ -32,16 +33,17 @@ services:
       postgres:
         condition: service_healthy
 
-  auth-service:
-    context: .
-    dockerfile: services/auth-service/Dockerfile
-    container_name: cargoez-auth-service
-    env_file: ./services/auth-service/.env
+  shared-db-example:
+    build:
+      context: .
+      dockerfile: services/shared-db-example/Dockerfile
+    container_name: cargoez-shared-db-example
+    env_file: ./services/shared-db-example/.env
     environment:
       DB_HOST: postgres
       DB_PASSWORD: postgres
     ports:
-      - '3003:3003'
+      - '3005:3005'
     depends_on:
       postgres:
         condition: service_healthy

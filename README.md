@@ -7,15 +7,15 @@ Node.js microservices monorepo with PostgreSQL, Clean Architecture, and publisha
 ```
 cargoez2-backend/
 ├── packages/                    # Publishable @rajkumarganesan93/* packages
-│   ├── domain/                  # BaseEntity, IRepository, API types, ColumnMap
+│   ├── domain/                  # BaseEntity, IRepository (9 methods), pagination, ColumnMap
 │   ├── application/             # Mapper, Audit, Logger
 │   ├── infrastructure/          # Error handler, AppError classes
 │   ├── api/                     # success(), error(), successPaginated()
-│   ├── shared/                  # getDbConfig, asyncHandler, healthCheck
+│   ├── shared/                  # getDbConfig, asyncHandler, parsePaginationFromQuery
 │   └── integrations/            # Email & notification interfaces + stubs
 ├── services/
-│   ├── user-service/            # CRUD APIs (port 3001)
-│   └── auth-service/            # Login, register, token APIs (port 3003)
+│   ├── user-service/            # User CRUD APIs (port 3001, DB: user_service_db)
+│   └── shared-db-example/       # Country CRUD APIs (port 3005, DB: master_db)
 ├── .npmrc                       # GitHub Packages registry config
 ├── docker-compose.yml
 └── package.json                 # npm workspaces root
@@ -24,7 +24,7 @@ cargoez2-backend/
 ### Package dependency graph
 
 ```
-@rajkumarganesan93/shared        (no deps)
+@rajkumarganesan93/shared        → domain
 @rajkumarganesan93/domain        (no deps)
 @rajkumarganesan93/api           → domain
 @rajkumarganesan93/application   → domain, shared
@@ -35,9 +35,9 @@ cargoez2-backend/
 ### Clean Architecture layers (per service)
 
 ```
-Domain          → entities (extend BaseEntity), repository interfaces
+Domain          → entities (extend BaseEntity), repository interfaces (extend IRepository)
 Application     → use cases, orchestration logic
-Infrastructure  → db.ts (pg pool), repository implementations
+Infrastructure  → db.ts (pg pool), repository implementations (all 9 IRepository methods)
 Presentation    → controllers, routes (with Swagger JSDoc), swagger.ts
 ```
 
@@ -62,12 +62,6 @@ npm install
 ```sql
 CREATE DATABASE user_service_db;
 CREATE DATABASE master_db;
-```
-
-Or via script:
-
-```bash
-psql -U postgres -f scripts/create-databases.sql
 ```
 
 ### 3. Configure environment
@@ -97,15 +91,15 @@ npm run migrate:all
 npm run dev -w @cargoez-be/user-service
 
 # Terminal 2
-npm run dev -w @cargoez-be/auth-service
+npm run dev -w @cargoez-be/shared-db-example
 ```
 
 ### 6. Verify
 
-| Service      | Health check                    | Swagger docs                     |
-| ------------ | ------------------------------- | -------------------------------- |
-| user-service | http://localhost:3001/health    | http://localhost:3001/api-docs   |
-| auth-service | http://localhost:3003/health    | http://localhost:3003/api-docs   |
+| Service           | Health check                    | Swagger docs                     |
+| ----------------- | ------------------------------- | -------------------------------- |
+| user-service      | http://localhost:3001/health    | http://localhost:3001/api-docs   |
+| shared-db-example | http://localhost:3005/health    | http://localhost:3005/api-docs   |
 
 ---
 
@@ -115,11 +109,11 @@ All packages are published to [GitHub Packages](https://github.com/rajkumarganes
 
 | Package | Purpose | README |
 | ------- | ------- | ------ |
-| `@rajkumarganesan93/domain` | Core types: BaseEntity, IRepository, pagination, API response types, ColumnMap | [packages/domain/README.md](packages/domain/README.md) |
+| `@rajkumarganesan93/domain` | BaseEntity, IRepository (9 methods), pagination, API response types, ColumnMap | [packages/domain/README.md](packages/domain/README.md) |
 | `@rajkumarganesan93/application` | Entity mapper (toEntity/toRow), audit service, pino logger | [packages/application/README.md](packages/application/README.md) |
 | `@rajkumarganesan93/infrastructure` | AppError classes, errorHandler/requestLogger middleware | [packages/infrastructure/README.md](packages/infrastructure/README.md) |
 | `@rajkumarganesan93/api` | Response helpers: success(), error(), successPaginated() | [packages/api/README.md](packages/api/README.md) |
-| `@rajkumarganesan93/shared` | getDbConfig, getConfig, asyncHandler, healthCheck | [packages/shared/README.md](packages/shared/README.md) |
+| `@rajkumarganesan93/shared` | getDbConfig, asyncHandler, parsePaginationFromQuery | [packages/shared/README.md](packages/shared/README.md) |
 | `@rajkumarganesan93/integrations` | IEmailProvider, INotificationProvider + stub implementations | [packages/integrations/README.md](packages/integrations/README.md) |
 
 ---
@@ -127,13 +121,6 @@ All packages are published to [GitHub Packages](https://github.com/rajkumarganes
 ## Installing packages
 
 ### 1. Create `.npmrc` in your project root
-
-```
-@rajkumarganesan93:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
-```
-
-Or use an environment variable:
 
 ```
 @rajkumarganesan93:registry=https://npm.pkg.github.com
@@ -150,12 +137,13 @@ npm install @rajkumarganesan93/domain @rajkumarganesan93/application @rajkumarga
 
 ## Developer guide: building a new service
 
-Follow this guide when creating a new microservice that uses the `@rajkumarganesan93` packages.
+Follow this guide when creating a new microservice that uses the `@rajkumarganesan93` packages. The `shared-db-example` service is a working reference implementation.
 
 ### Step 1: Define your entity
 
+Every entity extends `BaseEntity` (camelCase properties only):
+
 ```typescript
-// src/domain/entities/Product.ts
 import type { BaseEntity } from '@rajkumarganesan93/domain';
 
 export interface Product extends BaseEntity {
@@ -167,83 +155,63 @@ export interface Product extends BaseEntity {
 
 ### Step 2: Define repository interface
 
+All repository interfaces **must** extend `IRepository`. Do not add bespoke `findByX` methods -- use the generic `findOne(criteria)` instead.
+
 ```typescript
-// src/domain/repositories/IProductRepository.ts
-import type { PaginatedResult, ListOptions } from '@rajkumarganesan93/domain';
+import type { IRepository } from '@rajkumarganesan93/domain';
 import type { Product } from '../entities/Product.js';
 
 export interface CreateProductInput { name: string; sku: string; price: number; }
 export interface UpdateProductInput { name?: string; price?: number; }
 
-export interface IProductRepository {
-  findAll(options?: ListOptions): Promise<PaginatedResult<Product>>;
-  findById(id: string): Promise<Product | null>;
-  save(input: CreateProductInput): Promise<Product>;
-  update(id: string, input: UpdateProductInput): Promise<Product | null>;
-  delete(id: string): Promise<boolean>;
-}
+export interface IProductRepository extends IRepository<Product, CreateProductInput, UpdateProductInput> {}
 ```
+
+`IRepository` provides these 9 methods:
+
+| Method | Signature | Purpose |
+| ------ | --------- | ------- |
+| `findById` | `(id: string) => T \| null` | Get one by primary key |
+| `findAll` | `(options?) => PaginatedResult<T>` | Paginated list |
+| `findOne` | `(criteria) => T \| null` | Find first matching record |
+| `findMany` | `(criteria, options?) => PaginatedResult<T>` | Filtered paginated list |
+| `save` | `(input) => T` | Create a new record |
+| `update` | `(id, input) => T \| null` | Update by ID |
+| `delete` | `(id) => boolean` | Delete by ID |
+| `count` | `(criteria?) => number` | Count matching records |
+| `exists` | `(criteria) => boolean` | Check if any record matches |
 
 ### Step 3: Implement repository
 
+Implement all 9 methods. Use an `ALLOWED_COLUMNS` allowlist to prevent SQL injection when building WHERE clauses from criteria keys.
+
 ```typescript
-// src/infrastructure/repositories/ProductRepository.ts
 import { pool } from '../db.js';
 import { toEntity } from '@rajkumarganesan93/application';
-import type { ListOptions } from '@rajkumarganesan93/domain';
-import type { Product } from '../../domain/entities/Product.js';
-import type { IProductRepository, CreateProductInput, UpdateProductInput } from '../../domain/repositories/IProductRepository.js';
-
-const COLUMNS = 'id, name, sku, price, created_at, is_active, modified_at, created_by, modified_by, tenant_id';
+import type { IProductRepository } from '../../domain/repositories/IProductRepository.js';
 
 export class ProductRepository implements IProductRepository {
-  async findAll(options?: ListOptions) {
-    const page = options?.pagination?.page ?? 1;
-    const limit = Math.min(options?.pagination?.limit ?? 100, 500);
-    const offset = (page - 1) * limit;
-
-    const countResult = await pool.query('SELECT COUNT(*)::int FROM products WHERE is_active = true');
-    const total = countResult.rows[0]?.count ?? 0;
-
-    const result = await pool.query(
-      `SELECT ${COLUMNS} FROM products WHERE is_active = true ORDER BY created_at ASC LIMIT $1 OFFSET $2`,
-      [limit, offset]
-    );
-
-    return {
-      items: result.rows.map((row) => toEntity<Product>(row as Record<string, unknown>)),
-      meta: { total, page, limit, totalPages: Math.ceil(total / limit) || 1 },
-    };
-  }
-
-  async findById(id: string) {
-    const result = await pool.query(`SELECT ${COLUMNS} FROM products WHERE id = $1`, [id]);
-    return result.rows[0] ? toEntity<Product>(result.rows[0] as Record<string, unknown>) : null;
-  }
-
-  async save(input: CreateProductInput) {
-    const result = await pool.query(
-      `INSERT INTO products (name, sku, price) VALUES ($1, $2, $3) RETURNING ${COLUMNS}`,
-      [input.name, input.sku, input.price]
-    );
-    return toEntity<Product>(result.rows[0] as Record<string, unknown>);
-  }
-
-  // ... update, delete
+  async findOne(criteria: Record<string, unknown>) { /* parameterized WHERE from criteria */ }
+  async findMany(criteria: Record<string, unknown>, options?) { /* filtered + paginated */ }
+  async count(criteria?) { /* SELECT COUNT(*) with optional WHERE */ }
+  async exists(criteria) { /* SELECT EXISTS(...) */ }
+  // ... findById, findAll, save, update, delete
 }
 ```
 
 ### Step 4: Create use cases
 
+Use `findOne` instead of domain-specific finders like `findByEmail` or `findBySku`:
+
 ```typescript
-// src/application/use-cases/CreateProductUseCase.ts
 import { ConflictError } from '@rajkumarganesan93/infrastructure';
-import type { IProductRepository } from '../../domain/repositories/IProductRepository.js';
 
 export class CreateProductUseCase {
   constructor(private readonly repo: IProductRepository) {}
 
-  async execute(input: { name: string; sku: string; price: number }) {
+  async execute(input: CreateProductInput) {
+    const existing = await this.repo.findOne({ sku: input.sku });
+    if (existing) throw new ConflictError('Product with this SKU already exists');
     return this.repo.save(input);
   }
 }
@@ -251,24 +219,19 @@ export class CreateProductUseCase {
 
 ### Step 5: Create controller
 
+Use `parsePaginationFromQuery` from `@rajkumarganesan93/shared` for validated, configurable pagination parsing:
+
 ```typescript
-// src/presentation/controllers/ProductController.ts
-import { NotFoundError } from '@rajkumarganesan93/infrastructure';
-import { success, error, successPaginated } from '@rajkumarganesan93/api';
+import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
+import { success, successPaginated } from '@rajkumarganesan93/api';
 
 export class ProductController {
-  // constructor with use cases...
-
   getAll = async (req: Request, res: Response) => {
-    const page = parseInt(String(req.query.page), 10) || 1;
-    const limit = parseInt(String(req.query.limit), 10) || 100;
-    const result = await this.getAllUseCase.execute({ pagination: { page, limit } });
+    const pagination = parsePaginationFromQuery(req.query, {
+      allowedSortFields: ['name', 'sku', 'price', 'createdAt'],
+    });
+    const result = await this.getAllUseCase.execute({ pagination });
     return res.status(200).json(successPaginated(result.items, result.meta));
-  };
-
-  create = async (req: Request, res: Response) => {
-    const product = await this.createUseCase.execute(req.body);
-    return res.status(201).json(success(product));
   };
 }
 ```
@@ -276,21 +239,8 @@ export class ProductController {
 ### Step 6: Wire up routes and entry point
 
 ```typescript
-// src/presentation/routes.ts
 import { asyncHandler } from '@rajkumarganesan93/shared';
 import { success } from '@rajkumarganesan93/api';
-
-export function createRoutes(controller: ProductController) {
-  const router = Router();
-  router.get('/health', (_req, res) => res.json(success({ status: 'ok' })));
-  router.get('/products', asyncHandler(controller.getAll.bind(controller)));
-  router.post('/products', asyncHandler(controller.create.bind(controller)));
-  return router;
-}
-```
-
-```typescript
-// src/index.ts
 import { createLogger } from '@rajkumarganesan93/application';
 import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
 
@@ -305,12 +255,9 @@ app.use(errorHandler({ logger }));
 
 ### Step 7: Add migration
 
-```sql
--- migrations/001_init.sql
--- Author: YourName
--- Date: 2026-02-23
--- Description: Initial products table
+All tables must include `BaseEntity` columns:
 
+```sql
 CREATE TABLE IF NOT EXISTS products (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name VARCHAR(100) NOT NULL,
@@ -319,9 +266,9 @@ CREATE TABLE IF NOT EXISTS products (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     modified_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255),
-    modified_by VARCHAR(255),
-    tenant_id VARCHAR(255)
+    created_by VARCHAR(100),
+    modified_by VARCHAR(100),
+    tenant_id VARCHAR(100)
 );
 ```
 
@@ -338,7 +285,7 @@ CREATE TABLE IF NOT EXISTS products (
 | `npm run format` | Format with Prettier |
 | `npm run migrate:all` | Run all service migrations |
 | `npm run migrate:user` | Run user-service migrations |
-| `npm run migrate:auth` | Run auth-service migrations |
+| `npm run migrate:shared-db-example` | Run shared-db-example migrations |
 | `npm run publish:packages` | Build and publish all packages to GitHub Packages |
 
 ---
@@ -359,13 +306,9 @@ CREATE TABLE IF NOT EXISTS products (
 
 ### Version bumping
 
-Before publishing a new version, bump the version in the package's `package.json`:
-
 ```bash
 cd packages/domain
 npm version patch   # 1.0.0 -> 1.0.1
-# or: npm version minor  # 1.0.0 -> 1.1.0
-# or: npm version major  # 1.0.0 -> 2.0.0
 ```
 
 Then publish:
