@@ -21,16 +21,15 @@ export interface ServiceAppConfig {
   /** Absolute path to .env file. When provided, dotenv loads before anything else. */
   envPath?: string;
   /**
-   * Keycloak / OIDC authentication config. When provided, all routes are
-   * protected by JWT Bearer validation except public paths.
+   * Keycloak / OIDC authentication config.
    *
-   * Usage:
-   *   auth: {
-   *     issuer: process.env.KEYCLOAK_ISSUER!,
-   *     audience: process.env.KEYCLOAK_AUDIENCE,
-   *   }
+   * - **Auto-detect (recommended):** Omit this field and set `KEYCLOAK_ISSUER`
+   *   (and optionally `KEYCLOAK_AUDIENCE`) in your `.env` file. Auth is enabled
+   *   automatically after dotenv loads.
+   * - **Explicit:** Pass `{ issuer, audience }` directly.
+   * - **Disabled:** Set to `false` or omit the env vars entirely.
    */
-  auth?: AuthConfig;
+  auth?: AuthConfig | false;
 }
 
 export interface ServiceAppResult {
@@ -80,9 +79,16 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
     res.json(success({ status: 'ok' }));
   });
 
-  if (auth) {
-    logger.info('JWT authentication enabled (issuer: %s)', auth.issuer);
-    app.use(createAuthMiddleware(auth));
+  const resolvedAuth: AuthConfig | undefined =
+    auth === false
+      ? undefined
+      : auth ?? (process.env.KEYCLOAK_ISSUER
+          ? { issuer: process.env.KEYCLOAK_ISSUER, audience: process.env.KEYCLOAK_AUDIENCE }
+          : undefined);
+
+  if (resolvedAuth) {
+    logger.info('JWT authentication enabled (issuer: %s)', resolvedAuth.issuer);
+    app.use(createAuthMiddleware(resolvedAuth));
   }
 
   routes(app);

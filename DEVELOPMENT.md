@@ -677,9 +677,8 @@ const { start } = createServiceApp({
   serviceName: 'user-service',
   port: process.env.PORT ?? 3001,
   swaggerSpec,
-  auth: process.env.KEYCLOAK_ISSUER
-    ? { issuer: process.env.KEYCLOAK_ISSUER, audience: process.env.KEYCLOAK_AUDIENCE }
-    : undefined,
+  // Auth is auto-detected from KEYCLOAK_ISSUER env var after dotenv loads.
+  // Set auth: false to explicitly disable, even when env var is present.
   routes: (app) => app.use(createUserRoutes(controller)),
   onShutdown: () => knex.destroy(),
 });
@@ -694,7 +693,7 @@ start();
 | `serviceName` | `string` | Used for logging |
 | `port` | `number \| string` | HTTP port |
 | `swaggerSpec` | `object?` | OpenAPI spec (served at `/api-docs` and `/api-docs/json`) |
-| `auth` | `AuthConfig?` | Keycloak/OIDC JWT auth config (see [Section 19](#19-authentication--authorization-keycloak)) |
+| `auth` | `AuthConfig \| false?` | Auto-detected from `KEYCLOAK_ISSUER` env var. Pass explicit config or `false` to disable. See [Section 19](#19-authentication--authorization-keycloak) |
 | `routes` | `(app: Express) => void` | Mount routes |
 | `onShutdown` | `() => Promise<void>?` | Cleanup (close DB, etc.) |
 
@@ -1976,7 +1975,13 @@ KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
 KEYCLOAK_AUDIENCE=cargoez-api
 ```
 
-When `KEYCLOAK_ISSUER` is set, authentication is enabled automatically. When unset, auth is disabled (useful for testing without Keycloak).
+`createServiceApp` **auto-detects** these env vars after dotenv loads. No code changes needed in service `index.ts` — just set the vars and auth is enabled. Remove/comment them to disable auth.
+
+To explicitly disable auth even when env vars are present:
+
+```typescript
+createServiceApp({ ..., auth: false });
+```
 
 ### How Auth Works
 
