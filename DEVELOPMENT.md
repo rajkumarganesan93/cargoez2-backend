@@ -220,9 +220,11 @@ The API Portal at `http://localhost:4000` provides a single Swagger UI with a dr
 
 ## 6. Package Reference
 
+> **Quick reference:** See [PACKAGES.md](PACKAGES.md) for a concise index of all packages with exports, usage examples, and the dependency graph.
+
 ### 6.1 @rajkumarganesan93/domain
 
-**Version:** 1.3.0 · **Dependencies:** none
+**Version:** 1.4.0 · **Dependencies:** none
 
 Core domain types and interfaces. No business logic, no framework imports — pure TypeScript types only.
 
@@ -1735,10 +1737,10 @@ All 6 packages are published to [GitHub Packages](https://github.com/rajkumargan
 
 | Package | Version |
 |---------|---------|
-| `@rajkumarganesan93/domain` | 1.3.0 |
+| `@rajkumarganesan93/domain` | 1.4.0 |
 | `@rajkumarganesan93/application` | 1.1.0 |
-| `@rajkumarganesan93/infrastructure` | 1.3.0 |
-| `@rajkumarganesan93/api` | 1.2.0 |
+| `@rajkumarganesan93/infrastructure` | 1.8.0 |
+| `@rajkumarganesan93/api` | 1.4.0 |
 | `@rajkumarganesan93/shared` | 1.4.0 |
 | `@rajkumarganesan93/integrations` | 1.1.0 |
 
@@ -2245,6 +2247,16 @@ const SERVICE_URLS = [
 ## 21. Error Codes Reference
 
 See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference of all message codes, HTTP statuses, message templates, placeholders, and example request/response payloads.
+
+---
+
+## Related Documentation
+
+| Document | Description |
+|---|---|
+| [PACKAGES.md](PACKAGES.md) | Package index with exports, usage examples, and dependency graph |
+| [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, OAuth/PKCE flows, Postman tokens, frontend/mobile integration |
+| [ERROR_CODES.md](ERROR_CODES.md) | Message codes, HTTP statuses, and error response reference |
 
 ---
 

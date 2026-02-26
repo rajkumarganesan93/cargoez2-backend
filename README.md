@@ -396,6 +396,17 @@ See the [api package README](packages/api/README.md) for the complete list of av
 
 ---
 
+## Documentation
+
+| Document | Description |
+|---|---|
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Full development guide, architecture, coding conventions |
+| [PACKAGES.md](PACKAGES.md) | Package index with exports, usage examples, and dependency graph |
+| [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, OAuth/PKCE flows, token management |
+| [ERROR_CODES.md](ERROR_CODES.md) | Message codes and error response reference |
+
+---
+
 ## License
 
 Private -- CargoEz Platform
