@@ -1,20 +1,17 @@
 import { Router } from 'express';
 import { asyncHandler } from '@rajkumarganesan93/shared';
-import { success } from '@rajkumarganesan93/api';
+import { validateBody, validateParams } from '@rajkumarganesan93/infrastructure';
+import { CreateCountryBody, UpdateCountryBody, IdParams } from '../models/country.models.js';
 import type { CountryController } from './controllers/CountryController.js';
 
 export function createCountryRoutes(controller: CountryController): Router {
   const router = Router();
 
-  router.get('/health', (_req, res) => {
-    res.json(success({ status: 'ok' }));
-  });
-
-  router.post('/countries', asyncHandler(controller.create.bind(controller)));
-  router.get('/countries', asyncHandler(controller.getAll.bind(controller)));
-  router.get('/countries/:id', asyncHandler(controller.getById.bind(controller)));
-  router.put('/countries/:id', asyncHandler(controller.update.bind(controller)));
-  router.delete('/countries/:id', asyncHandler(controller.delete.bind(controller)));
+  router.post('/countries', validateBody(CreateCountryBody), asyncHandler(controller.create));
+  router.get('/countries', asyncHandler(controller.getAll));
+  router.get('/countries/:id', validateParams(IdParams), asyncHandler(controller.getById));
+  router.put('/countries/:id', validateParams(IdParams), validateBody(UpdateCountryBody), asyncHandler(controller.update));
+  router.delete('/countries/:id', validateParams(IdParams), asyncHandler(controller.delete));
 
   return router;
 }

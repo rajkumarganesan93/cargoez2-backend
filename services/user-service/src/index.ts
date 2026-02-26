@@ -2,14 +2,9 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(__dirname, '..', '.env') });
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
-import express from 'express';
-import swaggerUi from 'swagger-ui-express';
-import { createLogger } from '@rajkumarganesan93/application';
-import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
-import { MessageCode } from '@rajkumarganesan93/api';
+import { createServiceApp } from '@rajkumarganesan93/infrastructure';
 import { swaggerSpec } from './presentation/swagger.js';
 import { createUserRoutes } from './presentation/routes.js';
 import { UserController } from './presentation/controllers/UserController.js';
@@ -21,50 +16,22 @@ import { GetUserByIdUseCase } from './application/use-cases/GetUserByIdUseCase.j
 import { UpdateUserUseCase } from './application/use-cases/UpdateUserUseCase.js';
 import { DeleteUserUseCase } from './application/use-cases/DeleteUserUseCase.js';
 
-const logger = createLogger('user-service');
-const PORT = process.env.PORT ?? 3001;
-
-const userRepository = new UserRepository(getKnex());
-const createUserUseCase = new CreateUserUseCase(userRepository);
-const getAllUsersUseCase = new GetAllUsersUseCase(userRepository);
-const getUserByIdUseCase = new GetUserByIdUseCase(userRepository);
-const updateUserUseCase = new UpdateUserUseCase(userRepository);
-const deleteUserUseCase = new DeleteUserUseCase(userRepository);
-const userController = new UserController(
-  createUserUseCase,
-  getAllUsersUseCase,
-  getUserByIdUseCase,
-  updateUserUseCase,
-  deleteUserUseCase
+const knex = getKnex();
+const repo = new UserRepository(knex);
+const controller = new UserController(
+  new CreateUserUseCase(repo),
+  new GetAllUsersUseCase(repo),
+  new GetUserByIdUseCase(repo),
+  new UpdateUserUseCase(repo),
+  new DeleteUserUseCase(repo),
 );
 
-const app = express();
-app.use(express.json());
-app.use(requestLogger(logger));
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use(createUserRoutes(userController));
-
-app.use((_req, _res, next) => next(new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Route' })));
-app.use(errorHandler({ logger }));
-
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, `User service listening on port ${PORT}`);
+const { start } = createServiceApp({
+  serviceName: 'user-service',
+  port: process.env.PORT ?? 3001,
+  swaggerSpec,
+  routes: (app) => app.use(createUserRoutes(controller)),
+  onShutdown: () => knex.destroy(),
 });
 
-function gracefulShutdown(signal: string) {
-  logger.info(`Received ${signal}, shutting down gracefully`);
-  server.close(async () => {
-    try {
-      await getKnex().destroy();
-      logger.info('Database connections closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing database connections');
-    }
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000);
-}
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+start();

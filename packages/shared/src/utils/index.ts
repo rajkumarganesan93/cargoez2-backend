@@ -7,8 +7,13 @@ export type AsyncRequestHandler = (
   next: NextFunction
 ) => Promise<void | Response>;
 
-export function asyncHandler(
-  fn: AsyncRequestHandler
+/**
+ * Wraps an async route handler so that rejected promises are forwarded to next().
+ * Accepts any handler whose req/res signature is compatible with Express.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function asyncHandler<T extends (req: any, res: any, next?: any) => Promise<any>>(
+  fn: T,
 ): (req: Request, res: Response, next: NextFunction) => Promise<void> {
   return (req, res, next) => {
     return Promise.resolve(fn(req, res, next)).catch(next) as Promise<void>;

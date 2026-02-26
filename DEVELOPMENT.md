@@ -32,6 +32,7 @@
 16. [Docker Compose](#16-docker-compose)
 17. [Scripts Reference](#17-scripts-reference)
 18. [Coding Rules & Conventions](#18-coding-rules--conventions)
+19. [Error Codes Reference](#19-error-codes-reference)
 
 ---
 
@@ -431,28 +432,33 @@ export interface AuditEntry {
 
 ### 6.3 @rajkumarganesan93/api
 
-**Version:** 1.2.0 · **Dependencies:** `domain`
+**Version:** 1.3.0 · **Dependencies:** `domain`
 
-API response builders and the centralized **Message Catalog**.
+API response builders, the centralized **Message Catalog**, and HTTP status constants.
 
-#### Response Helpers
+#### HttpStatus Enum
+
+Use `HttpStatus` instead of hardcoding numeric status codes:
+
+```typescript
+import { HttpStatus } from '@rajkumarganesan93/api';
+
+res.status(HttpStatus.CREATED);   // 201
+res.status(HttpStatus.NOT_FOUND); // 404
+```
+
+> In most cases you won't need `HttpStatus` directly because `sendSuccess()` and `sendError()` (from infrastructure) auto-resolve the status from the `MessageCode`.
+
+#### Response Helpers (low-level)
 
 ```typescript
 import { success, error, errorRaw, successPaginated, MessageCode } from '@rajkumarganesan93/api';
 
-// Success
-res.status(201).json(success(user, MessageCode.CREATED, { resource: 'User' }));
-// → { success: true, messageCode: "CREATED", message: "User created successfully", data: {...}, timestamp: "..." }
-
-// Error
-res.status(400).json(error(MessageCode.FIELD_REQUIRED, { field: 'email' }));
-// → { success: false, messageCode: "FIELD_REQUIRED", error: "email is required", statusCode: 400, timestamp: "..." }
-
-// Paginated
-res.status(200).json(successPaginated(result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'User' }));
-
-// Raw error (escape hatch — avoid when possible)
-res.status(413).json(errorRaw('Request payload too large', 413));
+// These are the low-level builders. Prefer sendSuccess/sendError (infrastructure) in controllers.
+success(user, MessageCode.CREATED, { resource: 'User' });
+error(MessageCode.FIELD_REQUIRED, { field: 'email' });
+successPaginated(result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'User' });
+errorRaw('Request payload too large', 413);
 ```
 
 #### resolveMessage
@@ -473,9 +479,9 @@ const resolved = resolveMessage(MessageCode.DUPLICATE_EMAIL, { email: 'a@b.com' 
 
 ### 6.4 @rajkumarganesan93/infrastructure
 
-**Version:** 1.3.0 · **Dependencies:** `domain`, `application`, `api`, `knex` · **Peers:** `express`, `pino`
+**Version:** 1.4.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv` · **Peers:** `express`, `pino`
 
-Express middleware, error classes, and the generic `BaseRepository`.
+Express middleware, error classes, the generic `BaseRepository`, validation middleware, response helpers, Swagger utilities, and the service app factory.
 
 #### BaseRepository
 
@@ -597,6 +603,115 @@ app.use(requestLogger(logger));
 ```
 
 Logs every HTTP request with method, path, status, and duration. Also logs client-aborted requests.
+
+#### Validation Middleware (Zod-based Model Binding)
+
+Validates `req.body`, `req.params`, or `req.query` against a Zod schema. Parsed and transformed data is attached to `req.validated`. On failure, throws a `BadRequestError` with combined error messages.
+
+```typescript
+import { validateBody, validateParams, validateQuery } from '@rajkumarganesan93/infrastructure';
+import type { ValidatedRequest } from '@rajkumarganesan93/infrastructure';
+
+// In routes — declarative validation:
+router.post('/users', validateBody(CreateUserBody), asyncHandler(controller.create));
+router.get('/users/:id', validateParams(IdParams), asyncHandler(controller.getById));
+
+// In controller — typed request, zero manual validation:
+create = async (req: ValidatedRequest<CreateUserBody>, res: Response): Promise<Response> => {
+  const { name, email } = req.validated.body; // fully typed, trimmed, lowercased
+  const user = await this.createUserUseCase.execute({ name, email });
+  return sendSuccess(res, user, MessageCode.CREATED, { resource: 'User' });
+};
+
+getById = async (req: ValidatedRequest<unknown, IdParams>, res: Response): Promise<Response> => {
+  const { id } = req.validated.params; // validated UUID
+  // ...
+};
+```
+
+**ValidatedRequest** type parameters: `ValidatedRequest<TBody, TParams, TQuery>`
+
+#### Response Helpers (sendSuccess / sendError / sendPaginated)
+
+Auto-resolve HTTP status from `MessageCode` so controllers never hardcode status numbers:
+
+```typescript
+import { sendSuccess, sendError, sendPaginated } from '@rajkumarganesan93/infrastructure';
+
+// Success — HTTP status auto-resolved from MessageCode
+return sendSuccess(res, user, MessageCode.CREATED, { resource: 'User' });
+// → 201: { success: true, messageCode: "CREATED", message: "User created successfully", data: {...} }
+
+// Error — HTTP status auto-resolved from MessageCode
+return sendError(res, MessageCode.FIELD_REQUIRED, { field: 'email' });
+// → 400: { success: false, messageCode: "FIELD_REQUIRED", error: "email is required" }
+
+// Paginated — HTTP status auto-resolved from MessageCode
+return sendPaginated(res, result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'User' });
+// → 200: { success: true, data: { items: [...], meta: {...} } }
+```
+
+#### createServiceApp Factory
+
+Eliminates boilerplate in every service's `index.ts`. Handles: JSON parsing, request logging, Swagger UI, health check, 404 catch-all, error handler, and graceful shutdown.
+
+```typescript
+import { createServiceApp } from '@rajkumarganesan93/infrastructure';
+
+const { start } = createServiceApp({
+  serviceName: 'user-service',
+  port: process.env.PORT ?? 3001,
+  swaggerSpec,
+  routes: (app) => app.use(createUserRoutes(controller)),
+  onShutdown: () => knex.destroy(),
+});
+
+start();
+```
+
+**ServiceAppConfig:**
+
+| Property | Type | Purpose |
+|----------|------|---------|
+| `serviceName` | `string` | Used for logging |
+| `port` | `number \| string` | HTTP port |
+| `swaggerSpec` | `object?` | OpenAPI spec (served at `/api-docs`) |
+| `routes` | `(app: Express) => void` | Mount routes |
+| `onShutdown` | `() => Promise<void>?` | Cleanup (close DB, etc.) |
+
+**Built-in endpoints:** `/health`, `/api-docs` (if swaggerSpec provided)
+
+#### Swagger Helpers
+
+Auto-generate OpenAPI schemas from Zod models:
+
+```typescript
+import {
+  zodToSwagger,
+  SwaggerSuccessResponse,
+  SwaggerErrorResponse,
+  SwaggerPaginationMeta,
+  SwaggerPaginationParams,
+} from '@rajkumarganesan93/infrastructure';
+
+// Generate OpenAPI schema from a Zod model
+const UserSchema = zodToSwagger(UserResponse);
+const CreateUserInputSchema = zodToSwagger(CreateUserBody);
+
+// Use pre-built common schemas
+components: {
+  schemas: {
+    User: UserSchema,
+    CreateUserInput: CreateUserInputSchema,
+    PaginationMeta: SwaggerPaginationMeta,
+    SuccessResponse: SwaggerSuccessResponse,
+    ErrorResponse: SwaggerErrorResponse,
+  },
+},
+
+// Use pre-built pagination query parameters
+parameters: SwaggerPaginationParams,
+```
 
 ---
 
@@ -783,12 +898,13 @@ export interface User extends BaseEntity {
 }
 ```
 
-**Input validation (controller layer):**
-- UUID format validation on path params
-- Email format validation (`/^[^\s@]+@[^\s@]+\.[^\s@]+$/`)
+**Input validation (Zod middleware):**
+- UUID format validation on path params (via `validateParams(IdParams)`)
+- Email format validation (via `validateBody(CreateUserBody)`)
 - Name max length: 100 characters
 - Email max length: 150 characters
-- Input strings are trimmed; emails are lowercased
+- Input strings are automatically trimmed; emails are automatically lowercased
+- Validation errors return `VALIDATION_FAILED` with combined error messages
 
 ### 7.2 shared-db-example
 
@@ -828,6 +944,8 @@ services/product-service/
 │   │   ├── db.ts
 │   │   └── repositories/
 │   │       └── ProductRepository.ts
+│   ├── models/                        ← Zod schemas (validation + Swagger source of truth)
+│   │   └── product.models.ts
 │   └── presentation/
 │       ├── controllers/
 │       │   └── ProductController.ts
@@ -994,30 +1112,63 @@ export class DeleteProductUseCase {
 }
 ```
 
-### Step 7: Create the controller
+### Step 7: Define Zod models
 
-Validate input, use `MessageCode` for all responses, use `parsePaginationFromQuery`:
+Create request/response schemas in `src/models/`. This is the single source of truth for validation and Swagger.
+
+```typescript
+// src/models/product.models.ts
+import { z } from 'zod';
+
+export const CreateProductBody = z.object({
+  name: z.string().trim().min(1, 'name is required').max(100),
+  sku: z.string().trim().toUpperCase().min(1, 'sku is required').max(50),
+  price: z.number().min(0, 'price must be non-negative'),
+});
+export type CreateProductBody = z.infer<typeof CreateProductBody>;
+
+export const UpdateProductBody = z.object({
+  name: z.string().trim().min(1).max(100).optional(),
+  price: z.number().min(0).optional(),
+}).refine((data) => data.name !== undefined || data.price !== undefined, {
+  message: 'At least one of name or price is required',
+});
+export type UpdateProductBody = z.infer<typeof UpdateProductBody>;
+
+export const IdParams = z.object({
+  id: z.string().refine(
+    (val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val),
+    { message: 'id must be a valid UUID' },
+  ),
+});
+export type IdParams = z.infer<typeof IdParams>;
+
+export const ProductResponse = z.object({
+  id: z.string(), name: z.string(), sku: z.string(), price: z.number(),
+  isActive: z.boolean(), createdAt: z.string(), modifiedAt: z.string(),
+});
+export type ProductResponse = z.infer<typeof ProductResponse>;
+```
+
+### Step 8: Create the controller
+
+No manual validation — all validation is done by middleware. Use `ValidatedRequest` for typed access, `sendSuccess`/`sendPaginated` for auto-status responses.
 
 ```typescript
 // src/presentation/controllers/ProductController.ts
-import { Request, Response } from 'express';
-import { BadRequestError, NotFoundError } from '@rajkumarganesan93/infrastructure';
-import { success, error, successPaginated, MessageCode } from '@rajkumarganesan93/api';
+import type { Response } from 'express';
+import type { ValidatedRequest } from '@rajkumarganesan93/infrastructure';
+import { NotFoundError, sendSuccess, sendPaginated } from '@rajkumarganesan93/infrastructure';
+import { MessageCode } from '@rajkumarganesan93/api';
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
+import type { CreateProductBody, UpdateProductBody, IdParams } from '../../models/product.models.js';
 import { CreateProductUseCase } from '../../application/use-cases/CreateProductUseCase.js';
 import { GetAllProductsUseCase } from '../../application/use-cases/GetAllProductsUseCase.js';
 import { GetProductByIdUseCase } from '../../application/use-cases/GetProductByIdUseCase.js';
 import { UpdateProductUseCase } from '../../application/use-cases/UpdateProductUseCase.js';
 import { DeleteProductUseCase } from '../../application/use-cases/DeleteProductUseCase.js';
 
-const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ALLOWED_SORT_FIELDS = ['name', 'sku', 'price', 'createdAt', 'modifiedAt'];
-
-function assertValidUuid(id: string): void {
-  if (!UUID_REGEX.test(id)) {
-    throw new BadRequestError(MessageCode.INVALID_INPUT, { reason: 'id must be a valid UUID' });
-  }
-}
 
 export class ProductController {
   constructor(
@@ -1028,77 +1179,67 @@ export class ProductController {
     private readonly deleteUseCase: DeleteProductUseCase,
   ) {}
 
-  create = async (req: Request, res: Response): Promise<Response> => {
-    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
-    const sku = typeof req.body.sku === 'string' ? req.body.sku.trim().toUpperCase() : '';
-    const price = typeof req.body.price === 'number' ? req.body.price : NaN;
-
-    if (!name || !sku) {
-      return res.status(400).json(error(MessageCode.FIELD_REQUIRED, { field: 'name and sku' }));
-    }
-    if (isNaN(price) || price < 0) {
-      return res.status(400).json(error(MessageCode.INVALID_INPUT, { reason: 'price must be a non-negative number' }));
-    }
-
-    const product = await this.createUseCase.execute({ name, sku, price });
-    return res.status(201).json(success(product, MessageCode.CREATED, { resource: 'Product' }));
+  create = async (req: ValidatedRequest<CreateProductBody>, res: Response): Promise<Response> => {
+    const product = await this.createUseCase.execute(req.validated.body);
+    return sendSuccess(res, product, MessageCode.CREATED, { resource: 'Product' });
   };
 
-  getAll = async (req: Request, res: Response): Promise<Response> => {
+  getAll = async (req: ValidatedRequest, res: Response): Promise<Response> => {
     const pagination = parsePaginationFromQuery(req.query as Record<string, unknown>, {
       allowedSortFields: ALLOWED_SORT_FIELDS,
     });
     const result = await this.getAllUseCase.execute({ pagination });
-    return res.status(200).json(successPaginated(result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'Product' }));
+    return sendPaginated(res, result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'Product' });
   };
 
-  getById = async (req: Request, res: Response): Promise<Response> => {
-    assertValidUuid(req.params.id);
-    const product = await this.getByIdUseCase.execute(req.params.id);
+  getById = async (req: ValidatedRequest<unknown, IdParams>, res: Response): Promise<Response> => {
+    const product = await this.getByIdUseCase.execute(req.validated.params.id);
     if (!product) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Product' });
-    return res.status(200).json(success(product, MessageCode.FETCHED, { resource: 'Product' }));
+    return sendSuccess(res, product, MessageCode.FETCHED, { resource: 'Product' });
   };
 
-  update = async (req: Request, res: Response): Promise<Response> => {
-    assertValidUuid(req.params.id);
-    const product = await this.updateUseCase.execute(req.params.id, req.body);
+  update = async (req: ValidatedRequest<UpdateProductBody, IdParams>, res: Response): Promise<Response> => {
+    const product = await this.updateUseCase.execute(req.validated.params.id, req.validated.body);
     if (!product) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Product' });
-    return res.status(200).json(success(product, MessageCode.UPDATED, { resource: 'Product' }));
+    return sendSuccess(res, product, MessageCode.UPDATED, { resource: 'Product' });
   };
 
-  delete = async (req: Request, res: Response): Promise<Response> => {
-    assertValidUuid(req.params.id);
-    const deleted = await this.deleteUseCase.execute(req.params.id);
+  delete = async (req: ValidatedRequest<unknown, IdParams>, res: Response): Promise<Response> => {
+    const deleted = await this.deleteUseCase.execute(req.validated.params.id);
     if (!deleted) throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Product' });
-    return res.status(200).json(success(undefined, MessageCode.DELETED, { resource: 'Product' }));
+    return sendSuccess(res, undefined, MessageCode.DELETED, { resource: 'Product' });
   };
 }
 ```
 
-### Step 8: Create routes
+### Step 9: Create routes
+
+Attach validation middleware — no manual validation in routes:
 
 ```typescript
 // src/presentation/routes.ts
 import { Router } from 'express';
 import { asyncHandler } from '@rajkumarganesan93/shared';
-import { success } from '@rajkumarganesan93/api';
+import { validateBody, validateParams } from '@rajkumarganesan93/infrastructure';
+import { CreateProductBody, UpdateProductBody, IdParams } from '../models/product.models.js';
 import type { ProductController } from './controllers/ProductController.js';
 
 export function createProductRoutes(controller: ProductController): Router {
   const router = Router();
 
-  router.get('/health', (_req, res) => { res.json(success({ status: 'ok' })); });
-  router.post('/products', asyncHandler(controller.create.bind(controller)));
-  router.get('/products', asyncHandler(controller.getAll.bind(controller)));
-  router.get('/products/:id', asyncHandler(controller.getById.bind(controller)));
-  router.put('/products/:id', asyncHandler(controller.update.bind(controller)));
-  router.delete('/products/:id', asyncHandler(controller.delete.bind(controller)));
+  router.post('/products', validateBody(CreateProductBody), asyncHandler(controller.create));
+  router.get('/products', asyncHandler(controller.getAll));
+  router.get('/products/:id', validateParams(IdParams), asyncHandler(controller.getById));
+  router.put('/products/:id', validateParams(IdParams), validateBody(UpdateProductBody), asyncHandler(controller.update));
+  router.delete('/products/:id', validateParams(IdParams), asyncHandler(controller.delete));
 
   return router;
 }
 ```
 
-### Step 9: Create the entry point
+### Step 10: Create the entry point
+
+Use `createServiceApp` — no manual boilerplate:
 
 ```typescript
 // src/index.ts
@@ -1106,13 +1247,10 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(__dirname, '..', '.env') });
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
-import express from 'express';
-import { createLogger } from '@rajkumarganesan93/application';
-import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
-import { MessageCode } from '@rajkumarganesan93/api';
+import { createServiceApp } from '@rajkumarganesan93/infrastructure';
+import { swaggerSpec } from './presentation/swagger.js';
 import { createProductRoutes } from './presentation/routes.js';
 import { ProductController } from './presentation/controllers/ProductController.js';
 import { ProductRepository } from './infrastructure/repositories/ProductRepository.js';
@@ -1123,11 +1261,8 @@ import { GetProductByIdUseCase } from './application/use-cases/GetProductByIdUse
 import { UpdateProductUseCase } from './application/use-cases/UpdateProductUseCase.js';
 import { DeleteProductUseCase } from './application/use-cases/DeleteProductUseCase.js';
 
-const logger = createLogger('product-service');
-const PORT = process.env.PORT ?? 3002;
-
-// Composition root — wire dependencies
-const repo = new ProductRepository(getKnex());
+const knex = getKnex();
+const repo = new ProductRepository(knex);
 const controller = new ProductController(
   new CreateProductUseCase(repo),
   new GetAllProductsUseCase(repo),
@@ -1136,37 +1271,18 @@ const controller = new ProductController(
   new DeleteProductUseCase(repo),
 );
 
-const app = express();
-app.use(express.json());
-app.use(requestLogger(logger));
-app.use(createProductRoutes(controller));
-app.use((_req, _res, next) => next(new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Route' })));
-app.use(errorHandler({ logger }));
-
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, `Product service listening on port ${PORT}`);
+const { start } = createServiceApp({
+  serviceName: 'product-service',
+  port: process.env.PORT ?? 3002,
+  swaggerSpec,
+  routes: (app) => app.use(createProductRoutes(controller)),
+  onShutdown: () => knex.destroy(),
 });
 
-// Graceful shutdown
-function gracefulShutdown(signal: string) {
-  logger.info(`Received ${signal}, shutting down gracefully`);
-  server.close(async () => {
-    try {
-      await getKnex().destroy();
-      logger.info('Database connections closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing database connections');
-    }
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000);
-}
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+start();
 ```
 
-### Step 10: Create the migration
+### Step 11: Create the migration
 
 All tables **must** include BaseEntity columns:
 
@@ -1186,7 +1302,7 @@ CREATE TABLE IF NOT EXISTS products (
 );
 ```
 
-### Step 11: Create package.json
+### Step 12: Create package.json
 
 ```json
 {
@@ -1209,7 +1325,8 @@ CREATE TABLE IF NOT EXISTS products (
     "@rajkumarganesan93/shared": "*",
     "dotenv": "^16.4.5",
     "express": "^4.18.2",
-    "pg": "^8.11.3"
+    "pg": "^8.11.3",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -1220,11 +1337,11 @@ CREATE TABLE IF NOT EXISTS products (
 }
 ```
 
-### Step 12: Register in root package.json
+### Step 13: Register in root package.json
 
 Add `"services/product-service"` to the `workspaces` array, then run `npm install`.
 
-### Step 13: Build, migrate, run
+### Step 14: Build, migrate, run
 
 ```bash
 npm run build
@@ -1239,49 +1356,54 @@ npm run dev -w @cargoez-be/product-service
 Here is how a single `POST /users` request flows through the architecture:
 
 ```
-Client → Express → requestLogger → routes → asyncHandler → Controller → Use Case → Repository → DB
-                                                                                         ↓
-Client ← Express ← errorHandler (if error) ← Controller ← Use Case ← Repository ← DB result
+Client → Express → requestLogger → routes → validateBody(CreateUserBody) → asyncHandler → Controller → Use Case → Repository → DB
+                                                    ↓ (on validation fail)                                                         ↓
+                                        BadRequestError(VALIDATION_FAILED)                                                         ↓
+                                                    ↓                                                                              ↓
+Client ← Express ← errorHandler (if error) ← ← ← ← ← ← ← ← ← ← ← ← Controller ← Use Case ← Repository ← DB result
 ```
 
 **Step-by-step:**
 
-1. **Client** sends `POST http://localhost:3001/users` with body `{ "name": "Alice", "email": "alice@example.com" }`.
+1. **Client** sends `POST http://localhost:3001/users` with body `{ "name": "  Alice  ", "email": "ALICE@example.com" }`.
 
 2. **`express.json()`** parses the request body.
 
 3. **`requestLogger`** records the start time, logs `POST /users 201 42ms` on finish.
 
-4. **`routes.ts`** matches `POST /users` and calls `asyncHandler(controller.create)`.
+4. **`routes.ts`** matches `POST /users` → runs `validateBody(CreateUserBody)` middleware first.
 
-5. **`asyncHandler`** wraps the controller call in a try/catch. If the controller throws, the error is forwarded to `errorHandler`.
+5. **`validateBody(CreateUserBody)`** middleware:
+   - Parses body against Zod schema → trims `name` to `"Alice"`, lowercases email to `"alice@example.com"`
+   - If validation fails → throws `BadRequestError(VALIDATION_FAILED, { reason: "..." })` → caught by `errorHandler`
+   - On success → attaches parsed result to `req.validated.body`
 
-6. **`UserController.create`**:
-   - Trims `name`, trims and lowercases `email`
-   - Validates: non-empty, length limits, email format (regex)
-   - If validation fails → returns `400` with `MessageCode.FIELD_REQUIRED` or `INVALID_INPUT`
-   - Calls `createUserUseCase.execute({ name, email })`
+6. **`asyncHandler`** wraps the controller call in a try/catch. If the controller throws, the error is forwarded to `errorHandler`.
 
-7. **`CreateUserUseCase.execute`**:
+7. **`UserController.create`**:
+   - Accesses `req.validated.body` (already validated, trimmed, lowercased)
+   - Calls `createUserUseCase.execute(req.validated.body)`
+
+8. **`CreateUserUseCase.execute`**:
    - Calls `this.userRepository.findOne({ email: input.email })` to check for duplicates
    - If duplicate found → throws `ConflictError(MessageCode.DUPLICATE_EMAIL, { email })`
    - If no duplicate → calls `this.userRepository.save(input)`
 
-8. **`UserRepository.save`** (inherits from `BaseRepository`):
+9. **`UserRepository.save`** (inherits from `BaseRepository`):
    - `mapInput()` filters to writable fields (`name`, `email`) and maps to DB columns
    - Executes `INSERT INTO users (name, email) VALUES (...) RETURNING *`
    - `rowToEntity()` converts the DB row back to a `User` entity using `toEntity(row, COLUMN_MAP)`
 
-9. **Back in the controller**:
-   - Formats the response via `toUserResponse(user)`
-   - Returns `res.status(201).json(success(user, MessageCode.CREATED, { resource: 'User' }))`
+10. **Back in the controller**:
+    - Calls `sendSuccess(res, user, MessageCode.CREATED, { resource: 'User' })`
+    - `sendSuccess` auto-resolves HTTP 201 from `MessageCatalog[CREATED].status`
 
-10. **`success()` helper** calls `resolveMessage(MessageCode.CREATED, { resource: 'User' })` which:
+11. **`success()` helper** (called internally by `sendSuccess`) calls `resolveMessage(MessageCode.CREATED, { resource: 'User' })` which:
     - Looks up `CREATED` in `MessageCatalog` → `{ status: 201, message: '{resource} created successfully' }`
     - Replaces `{resource}` with `'User'` → `'User created successfully'`
     - Returns the final JSON envelope
 
-11. **Response sent to client:**
+12. **Response sent to client:**
 
 ```json
 {
@@ -1634,41 +1756,82 @@ Databases are auto-created via `scripts/init-dbs.sh`.
 5. `writableFields` must only include user-settable fields (not `id`, `isActive`, dates)
 6. `delete()` is always **soft-delete**
 
+### Model Binding (Zod Schemas)
+
+Define request/response shapes as Zod schemas in `models/` folder:
+
+```typescript
+// services/user-service/src/models/user.models.ts
+import { z } from 'zod';
+
+export const CreateUserBody = z.object({
+  name: z.string().trim().min(1, 'name is required').max(100),
+  email: z.string().trim().toLowerCase().min(1, 'email is required').max(150)
+    .refine((val) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val), { message: 'invalid email format' }),
+});
+export type CreateUserBody = z.infer<typeof CreateUserBody>;
+
+export const IdParams = z.object({
+  id: z.string().refine((val) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val), {
+    message: 'id must be a valid UUID',
+  }),
+});
+export type IdParams = z.infer<typeof IdParams>;
+```
+
 ### Controller Rules
 
-1. Validate all input (UUID format, email format, length limits, required fields)
-2. Trim string inputs; lowercase emails
-3. Use `parsePaginationFromQuery` for list endpoints
-4. Use `MessageCode` for all responses — never raw strings
-5. Use `assertValidUuid` for path parameters
-6. Map entity to response via a `toXxxResponse` function (controls which fields are exposed)
+1. Use `ValidatedRequest<TBody, TParams, TQuery>` for typed requests — never raw `Request`
+2. Access validated data via `req.validated.body` / `req.validated.params` — never `req.body` directly
+3. Use `sendSuccess()` / `sendError()` / `sendPaginated()` — never `res.status(N).json()`
+4. Use `parsePaginationFromQuery` for list endpoints
+5. Use `MessageCode` for all responses — never raw strings
+6. No manual validation in controllers — all validation is in Zod schemas + middleware
 
 ### Error Rules
 
 1. Always throw typed error classes (`BadRequestError`, `NotFoundError`, etc.)
 2. Always use `MessageCode` with placeholders — never raw strings
 3. Let `asyncHandler` + `errorHandler` handle the response formatting
-4. Use `{reason}` for `INVALID_INPUT` / `BAD_REQUEST`
+4. Use `{reason}` for `INVALID_INPUT` / `BAD_REQUEST` / `VALIDATION_FAILED`
 5. Use `{resource}` for `NOT_FOUND`, `CREATED`, `UPDATED`, `DELETED`
 6. Use `{field}` for `FIELD_REQUIRED`, `DUPLICATE_ENTRY`
+7. See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference
 
 ### Service Entry Point Pattern
 
-Every service `index.ts` must include:
-1. `dotenv.config()` with path to `.env`
-2. Composition root (wire all dependencies)
-3. `express.json()` middleware
-4. `requestLogger` middleware
-5. Routes
-6. 404 catch-all with `NotFoundError`
-7. `errorHandler` (last middleware)
-8. Graceful shutdown handlers (`SIGTERM`, `SIGINT`)
+Use `createServiceApp` — no more manual boilerplate:
+
+```typescript
+import dotenv from 'dotenv';
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
+
+import { createServiceApp } from '@rajkumarganesan93/infrastructure';
+
+const { start } = createServiceApp({
+  serviceName: 'my-service',
+  port: process.env.PORT ?? 3001,
+  swaggerSpec,
+  routes: (app) => app.use(createMyRoutes(controller)),
+  onShutdown: () => knex.destroy(),
+});
+
+start();
+```
+
+`createServiceApp` handles everything: `express.json()`, request logging, Swagger UI at `/api-docs`, health check at `/health`, 404 catch-all, `errorHandler`, and graceful shutdown (`SIGTERM`/`SIGINT`).
 
 ### Git Workflow
 
 - All code on `main` branch
 - Packages published to GitHub Packages
 - Commit messages follow conventional format with descriptive body
+
+---
+
+## 19. Error Codes Reference
+
+See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference of all message codes, HTTP statuses, message templates, placeholders, and example request/response payloads.
 
 ---
 

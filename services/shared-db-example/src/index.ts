@@ -2,14 +2,9 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: resolve(__dirname, '..', '.env') });
+dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
 
-import express from 'express';
-import swaggerUi from 'swagger-ui-express';
-import { createLogger } from '@rajkumarganesan93/application';
-import { errorHandler, requestLogger, NotFoundError } from '@rajkumarganesan93/infrastructure';
-import { MessageCode } from '@rajkumarganesan93/api';
+import { createServiceApp } from '@rajkumarganesan93/infrastructure';
 import { swaggerSpec } from './presentation/swagger.js';
 import { createCountryRoutes } from './presentation/routes.js';
 import { CountryController } from './presentation/controllers/CountryController.js';
@@ -21,50 +16,22 @@ import { GetCountryByIdUseCase } from './application/use-cases/GetCountryByIdUse
 import { UpdateCountryUseCase } from './application/use-cases/UpdateCountryUseCase.js';
 import { DeleteCountryUseCase } from './application/use-cases/DeleteCountryUseCase.js';
 
-const logger = createLogger('shared-db-example');
-const PORT = process.env.PORT ?? 3005;
-
-const countryRepository = new CountryRepository(getKnex());
-const createCountryUseCase = new CreateCountryUseCase(countryRepository);
-const getAllCountriesUseCase = new GetAllCountriesUseCase(countryRepository);
-const getCountryByIdUseCase = new GetCountryByIdUseCase(countryRepository);
-const updateCountryUseCase = new UpdateCountryUseCase(countryRepository);
-const deleteCountryUseCase = new DeleteCountryUseCase(countryRepository);
-const countryController = new CountryController(
-  createCountryUseCase,
-  getAllCountriesUseCase,
-  getCountryByIdUseCase,
-  updateCountryUseCase,
-  deleteCountryUseCase,
+const knex = getKnex();
+const repo = new CountryRepository(knex);
+const controller = new CountryController(
+  new CreateCountryUseCase(repo),
+  new GetAllCountriesUseCase(repo),
+  new GetCountryByIdUseCase(repo),
+  new UpdateCountryUseCase(repo),
+  new DeleteCountryUseCase(repo),
 );
 
-const app = express();
-app.use(express.json());
-app.use(requestLogger(logger));
-
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
-app.use(createCountryRoutes(countryController));
-
-app.use((_req, _res, next) => next(new NotFoundError(MessageCode.NOT_FOUND, { resource: 'Route' })));
-app.use(errorHandler({ logger }));
-
-const server = app.listen(PORT, () => {
-  logger.info({ port: PORT }, `Shared DB Example service listening on port ${PORT}`);
+const { start } = createServiceApp({
+  serviceName: 'shared-db-example',
+  port: process.env.PORT ?? 3005,
+  swaggerSpec,
+  routes: (app) => app.use(createCountryRoutes(controller)),
+  onShutdown: () => knex.destroy(),
 });
 
-function gracefulShutdown(signal: string) {
-  logger.info(`Received ${signal}, shutting down gracefully`);
-  server.close(async () => {
-    try {
-      await getKnex().destroy();
-      logger.info('Database connections closed');
-    } catch (err) {
-      logger.error({ err }, 'Error closing database connections');
-    }
-    process.exit(0);
-  });
-  setTimeout(() => process.exit(1), 10_000);
-}
-
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+start();
