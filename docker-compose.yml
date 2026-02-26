@@ -18,6 +18,25 @@ services:
       timeout: 5s
       retries: 5
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.1
+    container_name: cargoez-keycloak
+    command: start-dev --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: postgres
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - '8080:8080'
+    volumes:
+      - ./keycloak/cargoez-realm.json:/opt/keycloak/data/import/cargoez-realm.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   user-service:
     build:
       context: .
@@ -27,11 +46,14 @@ services:
     environment:
       DB_HOST: postgres
       DB_PASSWORD: postgres
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/cargoez
     ports:
       - '3001:3001'
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   shared-db-example:
     build:
@@ -42,11 +64,14 @@ services:
     environment:
       DB_HOST: postgres
       DB_PASSWORD: postgres
+      KEYCLOAK_ISSUER: http://keycloak:8080/realms/cargoez
     ports:
       - '3005:3005'
     depends_on:
       postgres:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
 volumes:
   postgres_data: {}

@@ -96,12 +96,16 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 
 | Code | HTTP Status | Message Template | When Used |
 |------|-------------|-----------------|-----------|
-| `UNAUTHORIZED` | 401 | `Authentication required` | No valid authentication token provided |
-| `FORBIDDEN` | 403 | `You do not have permission to perform this action` | User is authenticated but lacks permission |
+| `UNAUTHORIZED` | 401 | `Authentication required` | Missing `Authorization` header, invalid JWT signature, or malformed token |
+| `FORBIDDEN` | 403 | `You do not have permission to perform this action` | Valid token but user lacks required role (e.g., `admin`) |
 | `INVALID_CREDENTIALS` | 401 | `Invalid credentials` | Login attempt with wrong username/password |
-| `TOKEN_EXPIRED` | 401 | `Token has expired` | JWT or session token has expired |
+| `TOKEN_EXPIRED` | 401 | `Token has expired` | JWT `exp` claim is in the past |
 
-### Example — Unauthorized
+**Thrown by:**
+- `createAuthMiddleware` → `UNAUTHORIZED` (missing/invalid token), `TOKEN_EXPIRED` (expired token)
+- `authorize('admin')` → `FORBIDDEN` (user has no matching role)
+
+### Example — Unauthorized (missing or invalid token)
 
 ```json
 {
@@ -109,6 +113,30 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
   "messageCode": "UNAUTHORIZED",
   "error": "Authentication required",
   "statusCode": 401,
+  "timestamp": "2026-02-19T10:00:00.123Z"
+}
+```
+
+### Example — Token Expired
+
+```json
+{
+  "success": false,
+  "messageCode": "TOKEN_EXPIRED",
+  "error": "Token has expired",
+  "statusCode": 401,
+  "timestamp": "2026-02-19T10:00:00.123Z"
+}
+```
+
+### Example — Forbidden (insufficient role)
+
+```json
+{
+  "success": false,
+  "messageCode": "FORBIDDEN",
+  "error": "You do not have permission to perform this action",
+  "statusCode": 403,
   "timestamp": "2026-02-19T10:00:00.123Z"
 }
 ```

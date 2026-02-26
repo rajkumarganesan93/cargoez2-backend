@@ -7,6 +7,7 @@ import { createLogger } from '@rajkumarganesan93/application';
 import { success, MessageCode } from '@rajkumarganesan93/api';
 import { errorHandler } from '../middleware/errorHandler.js';
 import { requestLogger } from '../middleware/requestLogger.js';
+import { createAuthMiddleware, type AuthConfig } from '../middleware/authenticate.js';
 import { NotFoundError } from '../errors/AppError.js';
 import type pino from 'pino';
 
@@ -19,6 +20,17 @@ export interface ServiceAppConfig {
   onShutdown?: () => Promise<void>;
   /** Absolute path to .env file. When provided, dotenv loads before anything else. */
   envPath?: string;
+  /**
+   * Keycloak / OIDC authentication config. When provided, all routes are
+   * protected by JWT Bearer validation except public paths.
+   *
+   * Usage:
+   *   auth: {
+   *     issuer: process.env.KEYCLOAK_ISSUER!,
+   *     audience: process.env.KEYCLOAK_AUDIENCE,
+   *   }
+   */
+  auth?: AuthConfig;
 }
 
 export interface ServiceAppResult {
@@ -43,7 +55,7 @@ export interface ServiceAppResult {
  *   start();
  */
 export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
-  const { serviceName, port: defaultPort, swaggerSpec, routes, onShutdown, envPath } = config;
+  const { serviceName, port: defaultPort, swaggerSpec, routes, onShutdown, envPath, auth } = config;
 
   if (envPath) {
     dotenv.config({ path: envPath });
@@ -67,6 +79,11 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
   app.get('/health', (_req, res) => {
     res.json(success({ status: 'ok' }));
   });
+
+  if (auth) {
+    logger.info('JWT authentication enabled (issuer: %s)', auth.issuer);
+    app.use(createAuthMiddleware(auth));
+  }
 
   routes(app);
 

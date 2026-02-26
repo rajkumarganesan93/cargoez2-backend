@@ -19,6 +19,9 @@ const { start } = createServiceApp({
   port: 3001,
   envPath,
   swaggerSpec,
+  auth: process.env.KEYCLOAK_ISSUER
+    ? { issuer: process.env.KEYCLOAK_ISSUER, audience: process.env.KEYCLOAK_AUDIENCE }
+    : undefined,
   routes: (app) => {
     const knex = getKnex();
     const repo = new UserRepository(knex);

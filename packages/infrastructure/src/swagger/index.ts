@@ -155,6 +155,44 @@ export const SwaggerPaginatedResponse = {
   },
 };
 
+/**
+ * OpenAPI 3.0 security scheme for JWT Bearer authentication.
+ * Add to your swagger spec under `components.securitySchemes`.
+ *
+ * Usage in swagger.ts:
+ *   components: {
+ *     securitySchemes: { BearerAuth: SwaggerBearerAuth },
+ *   },
+ *   security: [SwaggerSecurityRequirement],
+ */
+export const SwaggerBearerAuth = {
+  type: 'http',
+  scheme: 'bearer',
+  bearerFormat: 'JWT',
+  description: 'Keycloak JWT access token. Click "Authorize" and paste your token.',
+};
+
+/**
+ * Global security requirement for Swagger specs.
+ * Apply at the spec root to require auth on all endpoints.
+ * Individual endpoints can override with `security: []` to make them public.
+ */
+export const SwaggerSecurityRequirement = { BearerAuth: [] };
+
+/**
+ * Swagger 401 and 403 response definitions for protected endpoints.
+ */
+export const SwaggerAuthResponses = {
+  '401': {
+    description: 'Unauthorized — missing or invalid Bearer token (messageCode: UNAUTHORIZED)',
+    content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
+  },
+  '403': {
+    description: 'Forbidden — insufficient role/permissions (messageCode: FORBIDDEN)',
+    content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
+  },
+};
+
 export const SwaggerPaginationParams = [
   {
     in: 'query', name: 'page',

@@ -32,7 +32,8 @@
 16. [Docker Compose](#16-docker-compose)
 17. [Scripts Reference](#17-scripts-reference)
 18. [Coding Rules & Conventions](#18-coding-rules--conventions)
-19. [Error Codes Reference](#19-error-codes-reference)
+19. [Authentication & Authorization (Keycloak)](#19-authentication--authorization-keycloak)
+20. [Error Codes Reference](#20-error-codes-reference)
 
 ---
 
@@ -676,6 +677,9 @@ const { start } = createServiceApp({
   serviceName: 'user-service',
   port: process.env.PORT ?? 3001,
   swaggerSpec,
+  auth: process.env.KEYCLOAK_ISSUER
+    ? { issuer: process.env.KEYCLOAK_ISSUER, audience: process.env.KEYCLOAK_AUDIENCE }
+    : undefined,
   routes: (app) => app.use(createUserRoutes(controller)),
   onShutdown: () => knex.destroy(),
 });
@@ -690,6 +694,7 @@ start();
 | `serviceName` | `string` | Used for logging |
 | `port` | `number \| string` | HTTP port |
 | `swaggerSpec` | `object?` | OpenAPI spec (served at `/api-docs` and `/api-docs/json`) |
+| `auth` | `AuthConfig?` | Keycloak/OIDC JWT auth config (see [Section 19](#19-authentication--authorization-keycloak)) |
 | `routes` | `(app: Express) => void` | Mount routes |
 | `onShutdown` | `() => Promise<void>?` | Cleanup (close DB, etc.) |
 
@@ -725,7 +730,62 @@ components: {
 
 // Use pre-built pagination query parameters
 parameters: SwaggerPaginationParams,
+
+// Security scheme for JWT Bearer auth
+import {
+  SwaggerBearerAuth,
+  SwaggerSecurityRequirement,
+  SwaggerAuthResponses,
+} from '@rajkumarganesan93/infrastructure';
+
+components: {
+  securitySchemes: { BearerAuth: SwaggerBearerAuth },
+},
+security: [SwaggerSecurityRequirement],
+
+// Add 401/403 responses to protected endpoints
+responses: {
+  '200': { ... },
+  ...SwaggerAuthResponses,  // adds 401 + 403
+},
 ```
+
+#### Authentication Middleware
+
+JWT Bearer token validation using JWKS key discovery. Works with Keycloak or any OIDC provider.
+
+```typescript
+import { createAuthMiddleware, authorize } from '@rajkumarganesan93/infrastructure';
+import type { AuthenticatedRequest, AuthUser } from '@rajkumarganesan93/infrastructure';
+
+// Automatically mounted by createServiceApp when auth config is provided.
+// For manual usage:
+app.use(createAuthMiddleware({
+  issuer: 'http://localhost:8080/realms/cargoez',
+  audience: 'cargoez-api',
+  publicPaths: ['/health', '/api-docs'],  // defaults
+}));
+
+// Role-based access control on routes:
+router.post('/users', authorize('admin'), validateBody(CreateUserBody), handler);
+router.put('/users/:id', authorize('admin', 'manager'), handler);
+
+// Access authenticated user in controllers:
+const user = (req as AuthenticatedRequest).user;
+console.log(user.sub, user.email, user.realmRoles);
+```
+
+**AuthUser properties:**
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `sub` | `string` | Keycloak user ID |
+| `email` | `string?` | User email |
+| `preferredUsername` | `string?` | Username |
+| `name` | `string?` | Full name |
+| `realmRoles` | `string[]` | Roles from `realm_access.roles` |
+| `resourceRoles` | `string[]` | Roles from `resource_access.<client>.roles` |
+| `tokenPayload` | `Record<string, unknown>` | Full decoded JWT payload |
 
 ---
 
@@ -1856,7 +1916,133 @@ It fetches each service's OpenAPI spec via `/api-docs/json` endpoints. To add a 
 
 ---
 
-## 19. Error Codes Reference
+## 19. Authentication & Authorization (Keycloak)
+
+### Overview
+
+All APIs are protected by **JWT Bearer token** authentication using **Keycloak** as the identity provider. The auth middleware lives in `@rajkumarganesan93/infrastructure` — services consume it via `createServiceApp`.
+
+### Keycloak Setup (Local)
+
+1. **Start Keycloak** (with Docker Compose):
+
+```bash
+docker-compose up -d keycloak
+```
+
+Keycloak runs at **http://localhost:8080** with admin credentials `admin` / `admin`.
+
+The `cargoez` realm is auto-imported from `keycloak/cargoez-realm.json` with:
+- **Realm:** `cargoez`
+- **Client:** `cargoez-api` (public client for Swagger/Postman)
+- **Client:** `cargoez-service` (confidential, for service-to-service)
+- **Roles:** `admin`, `user`, `manager`
+- **Test users:**
+
+| Username | Password | Roles |
+|----------|----------|-------|
+| `admin` | `admin123` | admin, user |
+| `testuser` | `test123` | user |
+| `manager` | `manager123` | manager, user |
+
+### Getting a Token
+
+Use Keycloak's token endpoint to obtain a JWT:
+
+```bash
+curl -X POST http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password" \
+  -d "client_id=cargoez-api" \
+  -d "username=admin" \
+  -d "password=admin123"
+```
+
+Response contains `access_token` — copy and use as `Bearer <token>` in API calls.
+
+### Using Tokens in Swagger
+
+1. Open Swagger UI (e.g., http://localhost:3001/api-docs)
+2. Click the **"Authorize"** button (lock icon at top-right)
+3. Paste the `access_token` value (without `Bearer ` prefix)
+4. Click **"Authorize"** — all subsequent "Try it out" calls include the token
+
+### Environment Variables
+
+Add to each service's `.env`:
+
+```env
+KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
+KEYCLOAK_AUDIENCE=cargoez-api
+```
+
+When `KEYCLOAK_ISSUER` is set, authentication is enabled automatically. When unset, auth is disabled (useful for testing without Keycloak).
+
+### How Auth Works
+
+```
+Request → JSON Parser → Request Logger → Swagger/Health (public)
+                                        ↓
+                                   authenticate (JWT validation via JWKS)
+                                        ↓
+                                   authorize('admin') (role check, per-route)
+                                        ↓
+                                   Route Handler
+```
+
+1. **`createAuthMiddleware`** — validates JWT Bearer tokens against Keycloak's JWKS endpoint. Caches public keys for performance. On success, attaches `AuthUser` to `req.user`.
+2. **`authorize(...roles)`** — checks if the authenticated user has at least one of the required roles.
+
+### Route Protection Pattern
+
+```typescript
+// routes.ts
+import { authorize } from '@rajkumarganesan93/infrastructure';
+
+// Read operations — authenticated users (any role)
+router.get('/users', asyncHandler(controller.getAll));
+router.get('/users/:id', validateParams(IdParams), asyncHandler(controller.getById));
+
+// Write operations — require specific roles
+router.post('/users', authorize('admin'), validateBody(CreateUserBody), asyncHandler(controller.create));
+router.put('/users/:id', authorize('admin', 'manager'), validateParams(IdParams), validateBody(UpdateUserBody), asyncHandler(controller.update));
+router.delete('/users/:id', authorize('admin'), validateParams(IdParams), asyncHandler(controller.delete));
+```
+
+### Accessing the Authenticated User
+
+```typescript
+import type { AuthenticatedRequest } from '@rajkumarganesan93/infrastructure';
+
+const handler = async (req: ValidatedRequest<CreateUserBody>, res: Response) => {
+  const authUser = (req as unknown as AuthenticatedRequest).user;
+  console.log(authUser.sub);          // Keycloak user ID
+  console.log(authUser.email);        // User email
+  console.log(authUser.realmRoles);   // ['admin', 'user']
+};
+```
+
+### Disabling Auth for Development
+
+Remove or comment out `KEYCLOAK_ISSUER` in `.env`:
+
+```env
+# KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
+```
+
+When the variable is absent, `createServiceApp` skips auth middleware entirely.
+
+### Keycloak Admin Console
+
+Access **http://localhost:8080/admin** (credentials: `admin` / `admin`) to:
+- Manage users, roles, and clients
+- View active sessions
+- Configure password policies
+- Set up additional identity providers
+
+---
+
+## 20. Error Codes Reference
 
 See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference of all message codes, HTTP statuses, message templates, placeholders, and example request/response payloads.
 

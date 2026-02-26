@@ -5,6 +5,9 @@ import {
   SwaggerRequestBody,
   SwaggerErrorResponse,
   SwaggerPaginationParams,
+  SwaggerBearerAuth,
+  SwaggerSecurityRequirement,
+  SwaggerAuthResponses,
 } from '@rajkumarganesan93/infrastructure';
 import { CreateUserBody, UpdateUserBody, UserResponse, EXAMPLE_USER } from './models/user.models.js';
 
@@ -27,7 +30,11 @@ export const swaggerSpec = {
     { name: 'Health', description: 'Service health check' },
     { name: 'Users', description: 'User CRUD operations' },
   ],
+  security: [SwaggerSecurityRequirement],
   components: {
+    securitySchemes: {
+      BearerAuth: SwaggerBearerAuth,
+    },
     schemas: {
       User: UserSchema,
       CreateUserInput: CreateUserInputSchema,
@@ -41,6 +48,7 @@ export const swaggerSpec = {
         tags: ['Health'],
         summary: 'Health check',
         description: 'Returns service health status.',
+        security: [],
         responses: {
           '200': {
             description: 'Service is healthy',
@@ -68,6 +76,7 @@ export const swaggerSpec = {
               },
             },
           },
+          ...SwaggerAuthResponses,
           '500': {
             description: 'Internal server error (messageCode: INTERNAL_ERROR)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
@@ -77,7 +86,7 @@ export const swaggerSpec = {
       post: {
         tags: ['Users'],
         summary: 'Create a new user',
-        description: 'Creates a user with the given name and email. Email must be unique. Request body is validated automatically via Zod schema.',
+        description: 'Creates a user with the given name and email. Email must be unique. Requires **admin** role.',
         requestBody: SwaggerRequestBody(
           { $ref: '#/components/schemas/CreateUserInput' },
           { name: 'John Doe', email: 'john@example.com' },
@@ -99,6 +108,7 @@ export const swaggerSpec = {
             description: 'Email already in use (messageCode: DUPLICATE_EMAIL)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
     },
@@ -127,12 +137,13 @@ export const swaggerSpec = {
             description: 'User not found (messageCode: NOT_FOUND)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
       put: {
         tags: ['Users'],
         summary: 'Update a user',
-        description: 'Updates user fields. At least one of name or email must be provided. Both id and body are validated automatically.',
+        description: 'Updates user fields. At least one of name or email must be provided. Requires **admin** or **manager** role.',
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'User UUID', schema: { type: 'string', format: 'uuid' } },
         ],
@@ -161,12 +172,13 @@ export const swaggerSpec = {
             description: 'Email already in use (messageCode: DUPLICATE_EMAIL)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
       delete: {
         tags: ['Users'],
         summary: 'Delete a user (soft-delete)',
-        description: 'Soft-deletes a user by UUID (sets isActive to false). The id parameter is validated automatically.',
+        description: 'Soft-deletes a user by UUID (sets isActive to false). Requires **admin** role.',
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'User UUID', schema: { type: 'string', format: 'uuid' } },
         ],
@@ -190,6 +202,7 @@ export const swaggerSpec = {
             description: 'User not found (messageCode: NOT_FOUND)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
     },

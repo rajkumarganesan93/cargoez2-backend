@@ -19,6 +19,10 @@ export type { ValidatedRequest } from './middleware/validate.js';
 
 export { sendSuccess, sendError, sendPaginated } from './helpers/response.js';
 
+export { createAuthMiddleware } from './middleware/authenticate.js';
+export type { AuthUser, AuthenticatedRequest, AuthConfig } from './middleware/authenticate.js';
+export { authorize } from './middleware/authorize.js';
+
 export { createServiceApp } from './app/createServiceApp.js';
 export type { ServiceAppConfig, ServiceAppResult } from './app/createServiceApp.js';
 
@@ -34,4 +38,7 @@ export {
   SwaggerPaginationMeta,
   SwaggerPaginatedResponse,
   SwaggerPaginationParams,
+  SwaggerBearerAuth,
+  SwaggerSecurityRequirement,
+  SwaggerAuthResponses,
 } from './swagger/index.js';

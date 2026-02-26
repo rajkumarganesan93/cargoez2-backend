@@ -5,6 +5,9 @@ import {
   SwaggerRequestBody,
   SwaggerErrorResponse,
   SwaggerPaginationParams,
+  SwaggerBearerAuth,
+  SwaggerSecurityRequirement,
+  SwaggerAuthResponses,
 } from '@rajkumarganesan93/infrastructure';
 import { CreateCountryBody, UpdateCountryBody, CountryResponse, EXAMPLE_COUNTRY } from './models/country.models.js';
 
@@ -27,7 +30,11 @@ export const swaggerSpec = {
     { name: 'Health', description: 'Service health check' },
     { name: 'Countries', description: 'Country CRUD operations' },
   ],
+  security: [SwaggerSecurityRequirement],
   components: {
+    securitySchemes: {
+      BearerAuth: SwaggerBearerAuth,
+    },
     schemas: {
       Country: CountrySchema,
       CreateCountryInput: CreateCountryInputSchema,
@@ -41,6 +48,7 @@ export const swaggerSpec = {
         tags: ['Health'],
         summary: 'Health check',
         description: 'Returns service health status.',
+        security: [],
         responses: {
           '200': {
             description: 'Service is healthy',
@@ -68,6 +76,7 @@ export const swaggerSpec = {
               },
             },
           },
+          ...SwaggerAuthResponses,
           '500': {
             description: 'Internal server error (messageCode: INTERNAL_ERROR)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
@@ -77,7 +86,7 @@ export const swaggerSpec = {
       post: {
         tags: ['Countries'],
         summary: 'Create a new country',
-        description: 'Creates a country with the given code and name. Code must be unique. Request body is validated automatically via Zod schema.',
+        description: 'Creates a country with the given code and name. Code must be unique. Requires **admin** role.',
         requestBody: SwaggerRequestBody(
           { $ref: '#/components/schemas/CreateCountryInput' },
           { code: 'IN', name: 'India' },
@@ -99,6 +108,7 @@ export const swaggerSpec = {
             description: 'Country code already exists (messageCode: DUPLICATE_ENTRY)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
     },
@@ -127,12 +137,13 @@ export const swaggerSpec = {
             description: 'Country not found (messageCode: NOT_FOUND)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
       put: {
         tags: ['Countries'],
         summary: 'Update a country',
-        description: 'Updates country fields. At least one of code or name must be provided. Both id and body are validated automatically.',
+        description: 'Updates country fields. At least one of code or name must be provided. Requires **admin** or **manager** role.',
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'Country UUID', schema: { type: 'string', format: 'uuid' } },
         ],
@@ -161,12 +172,13 @@ export const swaggerSpec = {
             description: 'Country code already in use (messageCode: DUPLICATE_ENTRY)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
       delete: {
         tags: ['Countries'],
         summary: 'Delete a country (soft-delete)',
-        description: 'Soft-deletes a country by UUID (sets isActive to false). The id parameter is validated automatically.',
+        description: 'Soft-deletes a country by UUID (sets isActive to false). Requires **admin** role.',
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'Country UUID', schema: { type: 'string', format: 'uuid' } },
         ],
@@ -190,6 +202,7 @@ export const swaggerSpec = {
             description: 'Country not found (messageCode: NOT_FOUND)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
+          ...SwaggerAuthResponses,
         },
       },
     },
