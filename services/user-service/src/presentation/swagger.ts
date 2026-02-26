@@ -6,7 +6,7 @@ import {
   SwaggerErrorResponse,
   SwaggerPaginationParams,
 } from '@rajkumarganesan93/infrastructure';
-import { CreateUserBody, UpdateUserBody, UserResponse, EXAMPLE_USER } from '../models/user.models.js';
+import { CreateUserBody, UpdateUserBody, UserResponse, EXAMPLE_USER } from './models/user.models.js';
 
 const UserSchema = zodToSwagger(UserResponse);
 const CreateUserInputSchema = zodToSwagger(CreateUserBody);

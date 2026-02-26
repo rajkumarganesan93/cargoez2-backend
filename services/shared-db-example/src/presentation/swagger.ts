@@ -6,7 +6,7 @@ import {
   SwaggerErrorResponse,
   SwaggerPaginationParams,
 } from '@rajkumarganesan93/infrastructure';
-import { CreateCountryBody, UpdateCountryBody, CountryResponse, EXAMPLE_COUNTRY } from '../models/country.models.js';
+import { CreateCountryBody, UpdateCountryBody, CountryResponse, EXAMPLE_COUNTRY } from './models/country.models.js';
 
 const CountrySchema = zodToSwagger(CountryResponse);
 const CreateCountryInputSchema = zodToSwagger(CreateCountryBody);
