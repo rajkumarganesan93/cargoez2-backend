@@ -33,7 +33,8 @@
 17. [Scripts Reference](#17-scripts-reference)
 18. [Coding Rules & Conventions](#18-coding-rules--conventions)
 19. [Authentication & Authorization (Keycloak)](#19-authentication--authorization-keycloak)
-20. [Error Codes Reference](#20-error-codes-reference)
+20. [API Portal (Global Swagger)](#20-api-portal-global-swagger)
+21. [Error Codes Reference](#21-error-codes-reference)
 
 ---
 
@@ -88,6 +89,8 @@ services/<service-name>/
 │   └── presentation/               # Layer 4: Controllers, routes, Swagger
 │       ├── controllers/
 │       │   └── UserController.ts
+│       ├── models/                # Zod schemas (validation + Swagger source of truth)
+│       │   └── user.models.ts
 │       ├── routes.ts
 │       └── swagger.ts
 ├── migrations/                     # Incremental SQL migration scripts
@@ -489,7 +492,7 @@ const resolved = resolveMessage(MessageCode.DUPLICATE_EMAIL, { email: 'a@b.com' 
 
 ### 6.4 @rajkumarganesan93/infrastructure
 
-**Version:** 1.6.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv` · **Peers:** `express`, `pino`
+**Version:** 1.8.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv`, `cors`, `jsonwebtoken`, `jwks-rsa` · **Peers:** `express`, `pino`
 
 Express middleware, error classes (`ValidationError`, `BadRequestError`, `NotFoundError`, etc.), the generic `BaseRepository`, validation middleware, response helpers, Swagger utilities, and the service app factory.
 
@@ -697,7 +700,9 @@ start();
 | `routes` | `(app: Express) => void` | Mount routes |
 | `onShutdown` | `() => Promise<void>?` | Cleanup (close DB, etc.) |
 
-**Built-in endpoints:** `/health`, `/api-docs` (Swagger UI), `/api-docs/json` (raw JSON spec with CORS — used by the API Portal)
+**Built-in middleware:** `cors()`, `express.json()`, `requestLogger`, JWT auth (auto-detected from `KEYCLOAK_ISSUER`), `errorHandler`, graceful shutdown
+
+**Built-in endpoints:** `/health`, `/api-docs` (Swagger UI), `/api-docs/json` (raw JSON spec — consumed by the API Portal)
 
 #### Swagger Helpers
 
@@ -1017,8 +1022,6 @@ services/product-service/
 │   │   ├── db.ts
 │   │   └── repositories/
 │   │       └── ProductRepository.ts
-│   ├── models/                        ← Zod schemas (validation + Swagger source of truth)
-│   │   └── product.models.ts
 │   └── presentation/
 │       ├── controllers/
 │       │   └── ProductController.ts
@@ -1187,10 +1190,10 @@ export class DeleteProductUseCase {
 
 ### Step 7: Define Zod models
 
-Create request/response schemas in `src/models/`. This is the single source of truth for validation and Swagger.
+Create request/response schemas in `src/presentation/models/`. This is the single source of truth for validation and Swagger.
 
 ```typescript
-// src/models/product.models.ts
+// src/presentation/models/product.models.ts
 import { z } from 'zod';
 
 export const CreateProductBody = z.object({
@@ -1234,7 +1237,7 @@ import type { ValidatedRequest } from '@rajkumarganesan93/infrastructure';
 import { NotFoundError, sendSuccess, sendPaginated } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
-import type { CreateProductBody, UpdateProductBody, IdParams } from '../../models/product.models.js';
+import type { CreateProductBody, UpdateProductBody, IdParams } from '../models/product.models.js';
 import { CreateProductUseCase } from '../../application/use-cases/CreateProductUseCase.js';
 import { GetAllProductsUseCase } from '../../application/use-cases/GetAllProductsUseCase.js';
 import { GetProductByIdUseCase } from '../../application/use-cases/GetProductByIdUseCase.js';
@@ -1294,7 +1297,7 @@ Attach validation middleware — no manual validation in routes:
 import { Router } from 'express';
 import { asyncHandler } from '@rajkumarganesan93/shared';
 import { validateBody, validateParams } from '@rajkumarganesan93/infrastructure';
-import { CreateProductBody, UpdateProductBody, IdParams } from '../models/product.models.js';
+import { CreateProductBody, UpdateProductBody, IdParams } from './models/product.models.js';
 import type { ProductController } from './controllers/ProductController.js';
 
 export function createProductRoutes(controller: ProductController): Router {
@@ -1833,10 +1836,10 @@ Databases are auto-created via `scripts/init-dbs.sh`.
 
 ### Model Binding (Zod Schemas)
 
-Define request/response shapes as Zod schemas in `models/` folder:
+Define request/response shapes as Zod schemas in `presentation/models/` folder:
 
 ```typescript
-// services/user-service/src/models/user.models.ts
+// services/user-service/src/presentation/models/user.models.ts
 import { z } from 'zod';
 
 export const CreateUserBody = z.object({
@@ -1895,7 +1898,7 @@ const { start } = createServiceApp({
 start();
 ```
 
-`createServiceApp` handles everything: `express.json()`, request logging, Swagger UI at `/api-docs`, raw JSON spec at `/api-docs/json` (with CORS for the API Portal), health check at `/health`, 404 catch-all, `errorHandler`, and graceful shutdown (`SIGTERM`/`SIGINT`).
+`createServiceApp` handles everything: CORS, `express.json()`, request logging, Swagger UI at `/api-docs`, raw JSON spec at `/api-docs/json`, health check at `/health`, JWT authentication (auto-detected from `KEYCLOAK_ISSUER` env var), 404 catch-all, `errorHandler`, and graceful shutdown (`SIGTERM`/`SIGINT`).
 
 ### API Portal (Global Swagger)
 
@@ -1919,52 +1922,170 @@ It fetches each service's OpenAPI spec via `/api-docs/json` endpoints. To add a 
 
 ### Overview
 
-All APIs are protected by **JWT Bearer token** authentication using **Keycloak** as the identity provider. The auth middleware lives in `@rajkumarganesan93/infrastructure` — services consume it via `createServiceApp`.
+All APIs are protected by **JWT Bearer token** authentication using **Keycloak** as the identity provider (OIDC/OAuth 2.0). The auth middleware lives in `@rajkumarganesan93/infrastructure` — services consume it automatically via `createServiceApp`.
 
-### Keycloak Setup (Local)
+**Authorization Type:** OAuth 2.0 Resource Owner Password Credentials (ROPC) grant with Keycloak as the Authorization Server. Tokens are RS256-signed JWTs verified via JWKS key discovery.
 
-1. **Start Keycloak** (with Docker Compose):
+### Architecture
+
+```
+┌─────────────┐     ┌───────────────┐     ┌──────────────────┐
+│   Client     │────>│   Keycloak    │     │  Microservice    │
+│ (Postman /   │     │  (Auth Server)│     │  (Resource       │
+│  Swagger /   │<────│               │     │   Server)        │
+│  Frontend)   │     └───────────────┘     │                  │
+│              │  access_token (JWT)       │  ┌────────────┐  │
+│              │──────────────────────────>│  │ authenticate│  │
+│              │  Bearer <token>           │  │ (JWKS)     │  │
+│              │                           │  └─────┬──────┘  │
+│              │                           │  ┌─────▼──────┐  │
+│              │                           │  │ authorize  │  │
+│              │                           │  │ (roles)    │  │
+│              │<──────────────────────────│  └────────────┘  │
+│              │  API Response             └──────────────────┘
+└─────────────┘
+```
+
+### Keycloak Setup (Local Development)
+
+**Option A: Standalone (Java)**
+
+```bash
+# Prerequisites: Java 17+ installed
+# Download Keycloak and extract to a directory
+# Start in dev mode with realm auto-import:
+set KEYCLOAK_ADMIN=admin
+set KEYCLOAK_ADMIN_PASSWORD=admin
+kc.bat start-dev --import-realm --http-port=8080
+```
+
+Place `keycloak/cargoez-realm.json` into Keycloak's `data/import/` folder before starting.
+
+**Option B: Docker Compose**
 
 ```bash
 docker-compose up -d keycloak
 ```
 
-Keycloak runs at **http://localhost:8080** with admin credentials `admin` / `admin`.
+Keycloak runs at **http://localhost:8080**.
 
-The `cargoez` realm is auto-imported from `keycloak/cargoez-realm.json` with:
-- **Realm:** `cargoez`
-- **Client:** `cargoez-api` (public client for Swagger/Postman)
-- **Client:** `cargoez-service` (confidential, for service-to-service)
-- **Roles:** `admin`, `user`, `manager`
-- **Test users:**
+### Realm Configuration
 
-| Username | Password | Roles |
-|----------|----------|-------|
-| `admin` | `admin123` | admin, user |
-| `testuser` | `test123` | user |
-| `manager` | `manager123` | manager, user |
+The `cargoez` realm is auto-imported from `keycloak/cargoez-realm.json`:
 
-### Getting a Token
+| Setting | Value |
+|---------|-------|
+| **Realm** | `cargoez` |
+| **Client (public)** | `cargoez-api` — for Swagger, Postman, and frontend apps |
+| **Client (confidential)** | `cargoez-service` — for service-to-service communication |
+| **Token Lifespan** | 300 seconds (5 minutes) |
+| **SSL Required** | none (dev mode only) |
 
-Use Keycloak's token endpoint to obtain a JWT:
+**Realm Roles:**
 
-```bash
-curl -X POST http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password" \
-  -d "client_id=cargoez-api" \
-  -d "username=admin" \
-  -d "password=admin123"
+| Role | Description |
+|------|-------------|
+| `admin` | Full administrative access — can create, read, update, and delete |
+| `manager` | Manager-level access — can read and update (no create/delete) |
+| `user` | Standard user — read-only access |
+
+**Pre-configured Test Users:**
+
+| Username | Password | Roles | Permissions |
+|----------|----------|-------|-------------|
+| `admin` | `admin123` | `admin`, `user` | Full CRUD on all resources |
+| `manager` | `manager123` | `manager`, `user` | GET + PUT only |
+| `testuser` | `test123` | `user` | GET only (read-only) |
+
+> **Note:** The Keycloak **Admin Console** at `http://localhost:8080/admin` uses different credentials: `admin` / `admin` (not `admin123`).
+
+### Getting a Token from Postman
+
+**Step 1:** Create a new `POST` request in Postman.
+
+**Step 2:** Set the URL:
+
+```
+http://localhost:8080/realms/cargoez/protocol/openid-connect/token
 ```
 
-Response contains `access_token` — copy and use as `Bearer <token>` in API calls.
+**Step 3:** Go to the **Body** tab, select **x-www-form-urlencoded**, and add:
 
-### Using Tokens in Swagger
+| Key | Value |
+|-----|-------|
+| `grant_type` | `password` |
+| `client_id` | `cargoez-api` |
+| `username` | `admin` |
+| `password` | `admin123` |
 
-1. Open Swagger UI (e.g., http://localhost:3001/api-docs)
+**Step 4:** Click **Send**. You'll receive:
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIs...",
+  "expires_in": 300,
+  "refresh_expires_in": 1800,
+  "refresh_token": "eyJhbGciOiJIUzUxMiIs...",
+  "token_type": "Bearer",
+  "scope": "profile email"
+}
+```
+
+**Step 5:** Copy the `access_token` value.
+
+**Step 6:** To call a protected API, go to the **Authorization** tab of your API request, select **Bearer Token**, and paste the token.
+
+> **Tip:** Save the token request as a Postman collection variable. You can also use Postman's **Pre-request Script** to auto-fetch tokens before each request:
+>
+> ```javascript
+> pm.sendRequest({
+>   url: 'http://localhost:8080/realms/cargoez/protocol/openid-connect/token',
+>   method: 'POST',
+>   header: { 'Content-Type': 'application/x-www-form-urlencoded' },
+>   body: {
+>     mode: 'urlencoded',
+>     urlencoded: [
+>       { key: 'grant_type', value: 'password' },
+>       { key: 'client_id', value: 'cargoez-api' },
+>       { key: 'username', value: 'admin' },
+>       { key: 'password', value: 'admin123' },
+>     ]
+>   }
+> }, (err, res) => {
+>   pm.collectionVariables.set('access_token', res.json().access_token);
+> });
+> ```
+>
+> Then set Authorization to `Bearer {{access_token}}`.
+
+### Getting a Token from curl / PowerShell
+
+**curl (bash):**
+
+```bash
+curl -s -X POST http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password&client_id=cargoez-api&username=admin&password=admin123" \
+  | jq -r '.access_token'
+```
+
+**PowerShell:**
+
+```powershell
+$body = @{ grant_type="password"; client_id="cargoez-api"; username="admin"; password="admin123" }
+$token = (Invoke-RestMethod -Uri "http://localhost:8080/realms/cargoez/protocol/openid-connect/token" `
+  -Method POST -Body $body -ContentType "application/x-www-form-urlencoded").access_token
+# Use in subsequent calls:
+Invoke-RestMethod -Uri "http://localhost:3001/users" -Headers @{ Authorization = "Bearer $token" }
+```
+
+### Using Tokens in Swagger UI
+
+1. Open Swagger UI (e.g., http://localhost:3001/api-docs or http://localhost:4000)
 2. Click the **"Authorize"** button (lock icon at top-right)
-3. Paste the `access_token` value (without `Bearer ` prefix)
+3. Paste the `access_token` value (without the `Bearer ` prefix)
 4. Click **"Authorize"** — all subsequent "Try it out" calls include the token
+5. The lock icons next to each endpoint turn **locked** when authorized
 
 ### Environment Variables
 
@@ -1983,20 +2104,23 @@ To explicitly disable auth even when env vars are present:
 createServiceApp({ ..., auth: false });
 ```
 
-### How Auth Works
+### How Auth Works (Middleware Pipeline)
 
 ```
-Request → JSON Parser → Request Logger → Swagger/Health (public)
-                                        ↓
-                                   authenticate (JWT validation via JWKS)
-                                        ↓
-                                   authorize('admin') (role check, per-route)
-                                        ↓
-                                   Route Handler
+Request → CORS → JSON Parser → Request Logger → Swagger/Health (public, skip auth)
+                                                ↓
+                                           authenticate (JWT validation via JWKS)
+                                                ↓
+                                           authorize('admin') (role check, per-route)
+                                                ↓
+                                           validateBody/validateParams (Zod)
+                                                ↓
+                                           Route Handler
 ```
 
-1. **`createAuthMiddleware`** — validates JWT Bearer tokens against Keycloak's JWKS endpoint. Caches public keys for performance. On success, attaches `AuthUser` to `req.user`.
-2. **`authorize(...roles)`** — checks if the authenticated user has at least one of the required roles.
+1. **`cors()`** — enables cross-origin requests (required for the API Portal at `:4000` to call services at `:3001`/`:3005`).
+2. **`createAuthMiddleware`** — validates JWT Bearer tokens against Keycloak's JWKS endpoint (`/protocol/openid-connect/certs`). Caches public keys for 10 minutes. On success, attaches `AuthUser` to `req.user`. Public paths (`/health`, `/api-docs`) skip authentication.
+3. **`authorize(...roles)`** — per-route middleware that checks if the authenticated user has at least one of the required roles (from `realm_access.roles` or `resource_access.<client>.roles`).
 
 ### Route Protection Pattern
 
@@ -2004,7 +2128,7 @@ Request → JSON Parser → Request Logger → Swagger/Health (public)
 // routes.ts
 import { authorize } from '@rajkumarganesan93/infrastructure';
 
-// Read operations — authenticated users (any role)
+// Read operations — any authenticated user (all roles)
 router.get('/users', asyncHandler(controller.getAll));
 router.get('/users/:id', validateParams(IdParams), asyncHandler(controller.getById));
 
@@ -2021,11 +2145,22 @@ import type { AuthenticatedRequest } from '@rajkumarganesan93/infrastructure';
 
 const handler = async (req: ValidatedRequest<CreateUserBody>, res: Response) => {
   const authUser = (req as unknown as AuthenticatedRequest).user;
-  console.log(authUser.sub);          // Keycloak user ID
-  console.log(authUser.email);        // User email
-  console.log(authUser.realmRoles);   // ['admin', 'user']
+  console.log(authUser.sub);              // Keycloak user ID (UUID)
+  console.log(authUser.email);            // User email
+  console.log(authUser.preferredUsername); // Username
+  console.log(authUser.realmRoles);       // ['admin', 'user']
+  console.log(authUser.resourceRoles);    // Client-specific roles
 };
 ```
+
+### Auth Error Responses
+
+| Scenario | Status | MessageCode | Message |
+|----------|--------|-------------|---------|
+| No `Authorization` header | 401 | `UNAUTHORIZED` | Authentication required |
+| Invalid / malformed token | 401 | `UNAUTHORIZED` | Authentication required |
+| Expired token | 401 | `TOKEN_EXPIRED` | Token has expired |
+| Valid token, wrong role | 403 | `FORBIDDEN` | You do not have permission to perform this action |
 
 ### Disabling Auth for Development
 
@@ -2035,7 +2170,7 @@ Remove or comment out `KEYCLOAK_ISSUER` in `.env`:
 # KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
 ```
 
-When the variable is absent, `createServiceApp` skips auth middleware entirely.
+When the variable is absent, `createServiceApp` skips auth middleware entirely — all endpoints become publicly accessible.
 
 ### Keycloak Admin Console
 
@@ -2044,10 +2179,63 @@ Access **http://localhost:8080/admin** (credentials: `admin` / `admin`) to:
 - View active sessions
 - Configure password policies
 - Set up additional identity providers
+- Switch to the `cargoez` realm from the top-left dropdown
 
 ---
 
-## 20. Error Codes Reference
+## 20. API Portal (Global Swagger)
+
+The API Portal at `http://localhost:4000` provides a unified Swagger UI that aggregates all microservice APIs into a single page with a dropdown to switch between services.
+
+### Starting the Portal
+
+```bash
+npm run dev:portal    # Development mode (tsx)
+# or
+npm run build -w @cargoez-be/api-portal
+node services/api-portal/dist/src/index.js
+```
+
+### How It Works
+
+1. The portal serves Swagger UI at the root (`/`)
+2. It uses `swaggerOptions.urls` to point to each service's `/api-docs/json` endpoint
+3. The browser fetches the OpenAPI spec from each service and renders it
+4. When you click "Try it out", the browser sends requests directly to the target service (e.g., `localhost:3001`)
+5. CORS is enabled on all services via `cors()` middleware, so cross-origin requests from the portal work seamlessly
+
+### Using Auth in the Portal
+
+1. Get a token from Keycloak (see [Section 19](#19-authentication--authorization-keycloak))
+2. Select a service from the dropdown (e.g., "User Service")
+3. Click the **"Authorize"** button
+4. Paste the `access_token` and click **"Authorize"**
+5. All "Try it out" calls for that service will include the token
+
+> **Note:** You need to authorize separately for each service in the dropdown since each has its own Swagger spec.
+
+### Adding a New Service to the Portal
+
+Edit `services/api-portal/src/index.ts` and add an entry to `SERVICE_URLS`:
+
+```typescript
+const SERVICE_URLS = [
+  { url: 'http://localhost:3001/api-docs/json', name: 'User Service' },
+  { url: 'http://localhost:3005/api-docs/json', name: 'Shared DB Example' },
+  { url: 'http://localhost:3002/api-docs/json', name: 'Product Service' },  // new
+];
+```
+
+### Endpoints
+
+| URL | Description |
+|-----|-------------|
+| `http://localhost:4000` | Swagger UI with service dropdown |
+| `http://localhost:4000/health` | Portal health check |
+
+---
+
+## 21. Error Codes Reference
 
 See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference of all message codes, HTTP statuses, message templates, placeholders, and example request/response payloads.
 

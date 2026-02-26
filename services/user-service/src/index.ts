@@ -12,7 +12,7 @@ import { GetUserByIdUseCase } from './application/use-cases/GetUserByIdUseCase.j
 import { UpdateUserUseCase } from './application/use-cases/UpdateUserUseCase.js';
 import { DeleteUserUseCase } from './application/use-cases/DeleteUserUseCase.js';
 
-const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
 
 const { start } = createServiceApp({
   serviceName: 'user-service',

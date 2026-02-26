@@ -12,7 +12,7 @@ import { GetCountryByIdUseCase } from './application/use-cases/GetCountryByIdUse
 import { UpdateCountryUseCase } from './application/use-cases/UpdateCountryUseCase.js';
 import { DeleteCountryUseCase } from './application/use-cases/DeleteCountryUseCase.js';
 
-const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
+const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '.env');
 
 const { start } = createServiceApp({
   serviceName: 'shared-db-example',

@@ -2,6 +2,7 @@ import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 import express, { type Express, type Router } from 'express';
+import cors from 'cors';
 import swaggerUi from 'swagger-ui-express';
 import { createLogger } from '@rajkumarganesan93/application';
 import { success, MessageCode } from '@rajkumarganesan93/api';
@@ -64,12 +65,12 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
   const logger = createLogger(serviceName);
 
   const app = express();
+  app.use(cors());
   app.use(express.json());
   app.use(requestLogger(logger));
 
   if (swaggerSpec) {
     app.get('/api-docs/json', (_req, res) => {
-      res.setHeader('Access-Control-Allow-Origin', '*');
       res.json(swaggerSpec);
     });
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
