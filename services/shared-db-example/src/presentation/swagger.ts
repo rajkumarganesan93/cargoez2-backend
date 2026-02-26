@@ -1,11 +1,12 @@
 import {
   zodToSwagger,
-  SwaggerSuccessResponse,
+  SwaggerTypedSuccessResponse,
+  SwaggerTypedPaginatedResponse,
+  SwaggerRequestBody,
   SwaggerErrorResponse,
-  SwaggerPaginationMeta,
   SwaggerPaginationParams,
 } from '@rajkumarganesan93/infrastructure';
-import { CreateCountryBody, UpdateCountryBody, CountryResponse } from '../models/country.models.js';
+import { CreateCountryBody, UpdateCountryBody, CountryResponse, EXAMPLE_COUNTRY } from '../models/country.models.js';
 
 const CountrySchema = zodToSwagger(CountryResponse);
 const CreateCountryInputSchema = zodToSwagger(CreateCountryBody);
@@ -15,10 +16,11 @@ export const swaggerSpec = {
   openapi: '3.0.0',
   info: {
     title: 'Shared DB Example API',
-    version: '1.2.0',
+    version: '2.0.0',
     description:
       'Example service demonstrating shared database access (master_db). ' +
-      'All responses follow a standard envelope with `success`, `messageCode`, `message`, and `data`/`error`.',
+      'All responses follow a standard envelope with `success`, `messageCode`, `message`, and `data`/`error`. ' +
+      'Use "Try it out" to see pre-filled request bodies and full response shapes.',
   },
   servers: [{ url: 'http://localhost:3005', description: 'Local development' }],
   tags: [
@@ -30,8 +32,6 @@ export const swaggerSpec = {
       Country: CountrySchema,
       CreateCountryInput: CreateCountryInputSchema,
       UpdateCountryInput: UpdateCountryInputSchema,
-      PaginationMeta: SwaggerPaginationMeta,
-      SuccessResponse: SwaggerSuccessResponse,
       ErrorResponse: SwaggerErrorResponse,
     },
   },
@@ -44,7 +44,11 @@ export const swaggerSpec = {
         responses: {
           '200': {
             description: 'Service is healthy',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse({ type: 'object', properties: { status: { type: 'string', example: 'ok' } } }),
+              },
+            },
           },
         },
       },
@@ -53,12 +57,16 @@ export const swaggerSpec = {
       get: {
         tags: ['Countries'],
         summary: 'List all countries (paginated)',
-        description: 'Returns a paginated list of active countries. Supports sorting by any entity field.',
+        description: 'Returns a paginated list of active countries. Supports sorting by code, name, createdAt, modifiedAt.',
         parameters: SwaggerPaginationParams,
         responses: {
           '200': {
             description: 'Paginated list of countries (messageCode: LIST_FETCHED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedPaginatedResponse(CountrySchema, EXAMPLE_COUNTRY),
+              },
+            },
           },
           '500': {
             description: 'Internal server error (messageCode: INTERNAL_ERROR)',
@@ -69,15 +77,19 @@ export const swaggerSpec = {
       post: {
         tags: ['Countries'],
         summary: 'Create a new country',
-        description: 'Creates a country with the given code and name. Code must be unique. Request body is validated automatically.',
-        requestBody: {
-          required: true,
-          content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateCountryInput' } } },
-        },
+        description: 'Creates a country with the given code and name. Code must be unique. Request body is validated automatically via Zod schema.',
+        requestBody: SwaggerRequestBody(
+          { $ref: '#/components/schemas/CreateCountryInput' },
+          { code: 'IN', name: 'India' },
+        ),
         responses: {
           '201': {
             description: 'Country created (messageCode: CREATED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(CountrySchema, EXAMPLE_COUNTRY),
+              },
+            },
           },
           '400': {
             description: 'Validation failed (messageCode: VALIDATION_FAILED)',
@@ -101,7 +113,11 @@ export const swaggerSpec = {
         responses: {
           '200': {
             description: 'Country found (messageCode: FETCHED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(CountrySchema, EXAMPLE_COUNTRY),
+              },
+            },
           },
           '400': {
             description: 'Invalid UUID (messageCode: INVALID_INPUT)',
@@ -120,13 +136,18 @@ export const swaggerSpec = {
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'Country UUID', schema: { type: 'string', format: 'uuid' } },
         ],
-        requestBody: {
-          content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateCountryInput' } } },
-        },
+        requestBody: SwaggerRequestBody(
+          { $ref: '#/components/schemas/UpdateCountryInput' },
+          { name: 'Bharat' },
+        ),
         responses: {
           '200': {
             description: 'Country updated (messageCode: UPDATED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(CountrySchema, { ...EXAMPLE_COUNTRY, name: 'Bharat' }),
+              },
+            },
           },
           '400': {
             description: 'Validation failed (messageCode: VALIDATION_FAILED)',
@@ -144,7 +165,7 @@ export const swaggerSpec = {
       },
       delete: {
         tags: ['Countries'],
-        summary: 'Delete a country',
+        summary: 'Delete a country (soft-delete)',
         description: 'Soft-deletes a country by UUID (sets isActive to false). The id parameter is validated automatically.',
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'Country UUID', schema: { type: 'string', format: 'uuid' } },
@@ -152,7 +173,14 @@ export const swaggerSpec = {
         responses: {
           '200': {
             description: 'Country deleted (messageCode: DELETED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(
+                  { type: 'object', nullable: true },
+                  undefined,
+                ),
+              },
+            },
           },
           '400': {
             description: 'Invalid UUID (messageCode: INVALID_INPUT)',

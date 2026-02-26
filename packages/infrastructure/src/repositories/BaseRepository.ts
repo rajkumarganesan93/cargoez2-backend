@@ -226,4 +226,21 @@ export class BaseRepository<
       .first();
     return !!row;
   }
+
+  /**
+   * Execute a callback inside a database transaction.
+   * If the callback throws, the transaction is rolled back automatically.
+   * Use this for check-then-act patterns to prevent TOCTOU race conditions.
+   *
+   * ```
+   * await repo.withTransaction(async (trx) => {
+   *   const existing = await trx(table).where(...).first();
+   *   if (existing) throw new ConflictError(...);
+   *   await trx(table).insert(...);
+   * });
+   * ```
+   */
+  async withTransaction<R>(fn: (trx: Knex.Transaction) => Promise<R>): Promise<R> {
+    return this.knex.transaction(fn);
+  }
 }

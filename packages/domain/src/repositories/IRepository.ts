@@ -44,4 +44,5 @@ export interface IRepository<T, CreateInput, UpdateInput> {
   delete(id: string): Promise<boolean>;
   count(criteria?: Record<string, unknown>): Promise<number>;
   exists(criteria: Record<string, unknown>): Promise<boolean>;
+  withTransaction<R>(fn: (trx: unknown) => Promise<R>): Promise<R>;
 }

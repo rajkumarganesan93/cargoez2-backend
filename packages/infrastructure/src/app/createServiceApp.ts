@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import express, { type Express, type Router } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { createLogger } from '@rajkumarganesan93/application';
@@ -9,10 +12,13 @@ import type pino from 'pino';
 
 export interface ServiceAppConfig {
   serviceName: string;
+  /** Default port. Overridden by process.env.PORT if set (loaded after dotenv). */
   port: number | string;
   swaggerSpec?: object;
   routes: (app: Express) => void;
   onShutdown?: () => Promise<void>;
+  /** Absolute path to .env file. When provided, dotenv loads before anything else. */
+  envPath?: string;
 }
 
 export interface ServiceAppResult {
@@ -37,7 +43,13 @@ export interface ServiceAppResult {
  *   start();
  */
 export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
-  const { serviceName, port, swaggerSpec, routes, onShutdown } = config;
+  const { serviceName, port: defaultPort, swaggerSpec, routes, onShutdown, envPath } = config;
+
+  if (envPath) {
+    dotenv.config({ path: envPath });
+  }
+
+  const port = process.env.PORT ?? defaultPort;
   const logger = createLogger(serviceName);
 
   const app = express();

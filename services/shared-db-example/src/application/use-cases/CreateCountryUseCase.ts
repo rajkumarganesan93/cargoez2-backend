@@ -7,10 +7,12 @@ export class CreateCountryUseCase {
   constructor(private readonly countryRepository: ICountryRepository) {}
 
   async execute(input: CreateCountryInput): Promise<Country> {
-    const existing = await this.countryRepository.findOne({ code: input.code });
-    if (existing) {
-      throw new ConflictError(MessageCode.DUPLICATE_ENTRY, { resource: 'Country', field: 'code' });
-    }
-    return this.countryRepository.save(input);
+    return this.countryRepository.withTransaction(async () => {
+      const existing = await this.countryRepository.findOne({ code: input.code });
+      if (existing) {
+        throw new ConflictError(MessageCode.DUPLICATE_ENTRY, { resource: 'Country', field: 'code' });
+      }
+      return this.countryRepository.save(input);
+    });
   }
 }

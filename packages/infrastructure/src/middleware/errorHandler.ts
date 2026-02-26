@@ -34,6 +34,14 @@ function isPayloadTooLargeError(err: Error): boolean {
   );
 }
 
+/**
+ * Detect PostgreSQL unique constraint violation (error code 23505).
+ * These are thrown by pg when an INSERT or UPDATE violates a UNIQUE index.
+ */
+function isPgUniqueViolation(err: Error): boolean {
+  return 'code' in err && (err as Record<string, unknown>).code === '23505';
+}
+
 export function errorHandler(
   options: ErrorHandlerOptions,
 ): (err: Error, req: Request, res: Response, _next: NextFunction) => void {
@@ -60,6 +68,17 @@ export function errorHandler(
       logger.warn({ ...logContext, statusCode: 413 }, 'Request payload too large');
       if (!res.headersSent) {
         res.status(413).json(errorRaw('Request payload too large', 413, stack));
+      }
+      return;
+    }
+
+    if (isPgUniqueViolation(err)) {
+      const detail = (err as unknown as Record<string, unknown>).detail as string | undefined;
+      logger.warn({ ...logContext, statusCode: 409, detail }, 'Unique constraint violation');
+      if (!res.headersSent) {
+        res.status(409).json(
+          errorResponse(MessageCode.DUPLICATE_ENTRY, { resource: 'Record', field: detail ?? 'field' }, stack),
+        );
       }
       return;
     }

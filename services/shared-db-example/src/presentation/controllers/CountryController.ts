@@ -1,9 +1,9 @@
 import type { Response } from 'express';
-import type { ValidatedRequest } from '@rajkumarganesan93/infrastructure';
+import type { ValidatedRequest, IdParams } from '@rajkumarganesan93/infrastructure';
 import { NotFoundError, sendSuccess, sendPaginated } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
-import type { CreateCountryBody, UpdateCountryBody, IdParams } from '../../models/country.models.js';
+import type { CreateCountryBody, UpdateCountryBody } from '../../models/country.models.js';
 import { CreateCountryUseCase } from '../../application/use-cases/CreateCountryUseCase.js';
 import { GetAllCountriesUseCase } from '../../application/use-cases/GetAllCountriesUseCase.js';
 import { GetCountryByIdUseCase } from '../../application/use-cases/GetCountryByIdUseCase.js';

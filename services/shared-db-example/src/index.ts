@@ -1,9 +1,5 @@
-import dotenv from 'dotenv';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-
-dotenv.config({ path: resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env') });
-
 import { createServiceApp } from '@rajkumarganesan93/infrastructure';
 import { swaggerSpec } from './presentation/swagger.js';
 import { createCountryRoutes } from './presentation/routes.js';
@@ -16,22 +12,26 @@ import { GetCountryByIdUseCase } from './application/use-cases/GetCountryByIdUse
 import { UpdateCountryUseCase } from './application/use-cases/UpdateCountryUseCase.js';
 import { DeleteCountryUseCase } from './application/use-cases/DeleteCountryUseCase.js';
 
-const knex = getKnex();
-const repo = new CountryRepository(knex);
-const controller = new CountryController(
-  new CreateCountryUseCase(repo),
-  new GetAllCountriesUseCase(repo),
-  new GetCountryByIdUseCase(repo),
-  new UpdateCountryUseCase(repo),
-  new DeleteCountryUseCase(repo),
-);
+const envPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.env');
 
 const { start } = createServiceApp({
   serviceName: 'shared-db-example',
-  port: process.env.PORT ?? 3005,
+  port: 3005,
+  envPath,
   swaggerSpec,
-  routes: (app) => app.use(createCountryRoutes(controller)),
-  onShutdown: () => knex.destroy(),
+  routes: (app) => {
+    const knex = getKnex();
+    const repo = new CountryRepository(knex);
+    const controller = new CountryController(
+      new CreateCountryUseCase(repo),
+      new GetAllCountriesUseCase(repo),
+      new GetCountryByIdUseCase(repo),
+      new UpdateCountryUseCase(repo),
+      new DeleteCountryUseCase(repo),
+    );
+    app.use(createCountryRoutes(controller));
+  },
+  onShutdown: () => getKnex().destroy(),
 });
 
 start();

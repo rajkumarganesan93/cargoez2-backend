@@ -1,9 +1,9 @@
 import type { Response } from 'express';
-import type { ValidatedRequest } from '@rajkumarganesan93/infrastructure';
+import type { ValidatedRequest, IdParams } from '@rajkumarganesan93/infrastructure';
 import { NotFoundError, sendSuccess, sendPaginated } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
-import type { CreateUserBody, UpdateUserBody, IdParams } from '../../models/user.models.js';
+import type { CreateUserBody, UpdateUserBody } from '../../models/user.models.js';
 import { CreateUserUseCase } from '../../application/use-cases/CreateUserUseCase.js';
 import { GetAllUsersUseCase } from '../../application/use-cases/GetAllUsersUseCase.js';
 import { GetUserByIdUseCase } from '../../application/use-cases/GetUserByIdUseCase.js';

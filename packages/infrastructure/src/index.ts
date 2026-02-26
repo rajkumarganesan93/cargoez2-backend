@@ -1,3 +1,5 @@
+export { z } from 'zod';
+
 export {
   AppError,
   BadRequestError,
@@ -19,8 +21,13 @@ export { sendSuccess, sendError, sendPaginated } from './helpers/response.js';
 export { createServiceApp } from './app/createServiceApp.js';
 export type { ServiceAppConfig, ServiceAppResult } from './app/createServiceApp.js';
 
+export { IdParams, BaseEntitySchema } from './schemas/common.js';
+
 export {
   zodToSwagger,
+  SwaggerTypedSuccessResponse,
+  SwaggerTypedPaginatedResponse,
+  SwaggerRequestBody,
   SwaggerSuccessResponse,
   SwaggerErrorResponse,
   SwaggerPaginationMeta,

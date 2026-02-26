@@ -7,12 +7,14 @@ export class UpdateUserUseCase {
   constructor(private readonly userRepository: IUserRepository) {}
 
   async execute(id: string, input: UpdateUserInput): Promise<User | null> {
-    const existing = await this.userRepository.findById(id);
-    if (!existing) return null;
-    if (input.email && input.email !== existing.email) {
-      const byEmail = await this.userRepository.findOne({ email: input.email });
-      if (byEmail) throw new ConflictError(MessageCode.DUPLICATE_EMAIL, { email: input.email });
-    }
-    return this.userRepository.update(id, input);
+    return this.userRepository.withTransaction(async () => {
+      const existing = await this.userRepository.findById(id);
+      if (!existing) return null;
+      if (input.email && input.email !== existing.email) {
+        const byEmail = await this.userRepository.findOne({ email: input.email });
+        if (byEmail) throw new ConflictError(MessageCode.DUPLICATE_EMAIL, { email: input.email });
+      }
+      return this.userRepository.update(id, input);
+    });
   }
 }

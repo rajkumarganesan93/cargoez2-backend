@@ -85,6 +85,7 @@ const mockRepo: ICountryRepository = {
     }
     return false;
   },
+  withTransaction: async <R>(fn: (trx: unknown) => Promise<R>): Promise<R> => fn(null),
 };
 
 const createCountryUseCase = new CreateCountryUseCase(mockRepo);

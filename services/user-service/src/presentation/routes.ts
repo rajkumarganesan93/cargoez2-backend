@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '@rajkumarganesan93/shared';
-import { validateBody, validateParams } from '@rajkumarganesan93/infrastructure';
-import { CreateUserBody, UpdateUserBody, IdParams } from '../models/user.models.js';
+import { validateBody, validateParams, IdParams } from '@rajkumarganesan93/infrastructure';
+import { CreateUserBody, UpdateUserBody } from '../models/user.models.js';
 import type { UserController } from './controllers/UserController.js';
 
 export function createUserRoutes(controller: UserController): Router {

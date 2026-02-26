@@ -1,11 +1,12 @@
 import {
   zodToSwagger,
-  SwaggerSuccessResponse,
+  SwaggerTypedSuccessResponse,
+  SwaggerTypedPaginatedResponse,
+  SwaggerRequestBody,
   SwaggerErrorResponse,
-  SwaggerPaginationMeta,
   SwaggerPaginationParams,
 } from '@rajkumarganesan93/infrastructure';
-import { CreateUserBody, UpdateUserBody, UserResponse } from '../models/user.models.js';
+import { CreateUserBody, UpdateUserBody, UserResponse, EXAMPLE_USER } from '../models/user.models.js';
 
 const UserSchema = zodToSwagger(UserResponse);
 const CreateUserInputSchema = zodToSwagger(CreateUserBody);
@@ -15,10 +16,11 @@ export const swaggerSpec = {
   openapi: '3.0.0',
   info: {
     title: 'User Service API',
-    version: '1.2.0',
+    version: '2.0.0',
     description:
       'Manages users in the cargoez-be platform. ' +
-      'All responses follow a standard envelope with `success`, `messageCode`, `message`, and `data`/`error`.',
+      'All responses follow a standard envelope with `success`, `messageCode`, `message`, and `data`/`error`. ' +
+      'Use "Try it out" to see pre-filled request bodies and full response shapes.',
   },
   servers: [{ url: 'http://localhost:3001', description: 'Local development' }],
   tags: [
@@ -30,8 +32,6 @@ export const swaggerSpec = {
       User: UserSchema,
       CreateUserInput: CreateUserInputSchema,
       UpdateUserInput: UpdateUserInputSchema,
-      PaginationMeta: SwaggerPaginationMeta,
-      SuccessResponse: SwaggerSuccessResponse,
       ErrorResponse: SwaggerErrorResponse,
     },
   },
@@ -44,7 +44,11 @@ export const swaggerSpec = {
         responses: {
           '200': {
             description: 'Service is healthy',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse({ type: 'object', properties: { status: { type: 'string', example: 'ok' } } }),
+              },
+            },
           },
         },
       },
@@ -53,12 +57,16 @@ export const swaggerSpec = {
       get: {
         tags: ['Users'],
         summary: 'List all users (paginated)',
-        description: 'Returns a paginated list of active users. Supports sorting by any entity field.',
+        description: 'Returns a paginated list of active users. Supports sorting by name, email, createdAt, modifiedAt.',
         parameters: SwaggerPaginationParams,
         responses: {
           '200': {
             description: 'Paginated list of users (messageCode: LIST_FETCHED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedPaginatedResponse(UserSchema, EXAMPLE_USER),
+              },
+            },
           },
           '500': {
             description: 'Internal server error (messageCode: INTERNAL_ERROR)',
@@ -69,15 +77,19 @@ export const swaggerSpec = {
       post: {
         tags: ['Users'],
         summary: 'Create a new user',
-        description: 'Creates a user with the given name and email. Email must be unique. Request body is validated automatically.',
-        requestBody: {
-          required: true,
-          content: { 'application/json': { schema: { $ref: '#/components/schemas/CreateUserInput' } } },
-        },
+        description: 'Creates a user with the given name and email. Email must be unique. Request body is validated automatically via Zod schema.',
+        requestBody: SwaggerRequestBody(
+          { $ref: '#/components/schemas/CreateUserInput' },
+          { name: 'John Doe', email: 'john@example.com' },
+        ),
         responses: {
           '201': {
             description: 'User created (messageCode: CREATED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(UserSchema, EXAMPLE_USER),
+              },
+            },
           },
           '400': {
             description: 'Validation failed (messageCode: VALIDATION_FAILED)',
@@ -101,7 +113,11 @@ export const swaggerSpec = {
         responses: {
           '200': {
             description: 'User found (messageCode: FETCHED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(UserSchema, EXAMPLE_USER),
+              },
+            },
           },
           '400': {
             description: 'Invalid UUID (messageCode: INVALID_INPUT)',
@@ -120,13 +136,18 @@ export const swaggerSpec = {
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'User UUID', schema: { type: 'string', format: 'uuid' } },
         ],
-        requestBody: {
-          content: { 'application/json': { schema: { $ref: '#/components/schemas/UpdateUserInput' } } },
-        },
+        requestBody: SwaggerRequestBody(
+          { $ref: '#/components/schemas/UpdateUserInput' },
+          { name: 'Jane Doe' },
+        ),
         responses: {
           '200': {
             description: 'User updated (messageCode: UPDATED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(UserSchema, { ...EXAMPLE_USER, name: 'Jane Doe' }),
+              },
+            },
           },
           '400': {
             description: 'Validation failed (messageCode: VALIDATION_FAILED)',
@@ -144,7 +165,7 @@ export const swaggerSpec = {
       },
       delete: {
         tags: ['Users'],
-        summary: 'Delete a user',
+        summary: 'Delete a user (soft-delete)',
         description: 'Soft-deletes a user by UUID (sets isActive to false). The id parameter is validated automatically.',
         parameters: [
           { in: 'path', name: 'id', required: true, description: 'User UUID', schema: { type: 'string', format: 'uuid' } },
@@ -152,7 +173,14 @@ export const swaggerSpec = {
         responses: {
           '200': {
             description: 'User deleted (messageCode: DELETED)',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/SuccessResponse' } } },
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse(
+                  { type: 'object', nullable: true },
+                  undefined,
+                ),
+              },
+            },
           },
           '400': {
             description: 'Invalid UUID (messageCode: INVALID_INPUT)',

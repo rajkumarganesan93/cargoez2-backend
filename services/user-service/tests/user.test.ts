@@ -85,6 +85,7 @@ const mockRepo: IUserRepository = {
     }
     return false;
   },
+  withTransaction: async <R>(fn: (trx: unknown) => Promise<R>): Promise<R> => fn(null),
 };
 
 const createUserUseCase = new CreateUserUseCase(mockRepo);

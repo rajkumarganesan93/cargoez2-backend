@@ -7,10 +7,12 @@ export class CreateUserUseCase {
   constructor(private readonly userRepository: IUserRepository) {}
 
   async execute(input: CreateUserInput): Promise<User> {
-    const existing = await this.userRepository.findOne({ email: input.email });
-    if (existing) {
-      throw new ConflictError(MessageCode.DUPLICATE_EMAIL, { email: input.email });
-    }
-    return this.userRepository.save(input);
+    return this.userRepository.withTransaction(async () => {
+      const existing = await this.userRepository.findOne({ email: input.email });
+      if (existing) {
+        throw new ConflictError(MessageCode.DUPLICATE_EMAIL, { email: input.email });
+      }
+      return this.userRepository.save(input);
+    });
   }
 }
