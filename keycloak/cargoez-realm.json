@@ -31,20 +31,106 @@
     {
       "clientId": "cargoez-api",
       "name": "CargoEz API Client",
-      "description": "Public client for Swagger UI, Postman, and frontend apps",
+      "description": "Public client for Postman and direct API testing (ROPC grant)",
       "enabled": true,
       "publicClient": true,
       "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [],
+      "webOrigins": ["*"],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "cargoez-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "cargoez-web",
+      "name": "CargoEz Web Application",
+      "description": "Public client for frontend web apps using Authorization Code + PKCE",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
       "redirectUris": [
-        "http://localhost:3001/*",
-        "http://localhost:3005/*",
-        "http://localhost:4000/*",
-        "http://localhost:8080/*"
+        "http://localhost:3000/*",
+        "http://localhost:5173/*",
+        "http://localhost:4200/*",
+        "http://localhost:8100/*"
       ],
-      "webOrigins": ["*"],
+      "webOrigins": [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:4200",
+        "http://localhost:8100"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "cargoez-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "cargoez-mobile",
+      "name": "CargoEz Mobile Application",
+      "description": "Public client for mobile apps (React Native, Flutter) using Authorization Code + PKCE",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "cargoez://callback",
+        "cargoez://oauth/callback",
+        "exp://127.0.0.1:8081/--/auth/callback",
+        "http://localhost:8081/*"
+      ],
+      "webOrigins": ["+"],
       "defaultClientScopes": [
         "web-origins",
         "acr",
@@ -71,7 +157,7 @@
     {
       "clientId": "cargoez-service",
       "name": "CargoEz Service Client",
-      "description": "Confidential client for service-to-service communication",
+      "description": "Confidential client for service-to-service communication (Client Credentials grant)",
       "enabled": true,
       "publicClient": false,
       "directAccessGrantsEnabled": false,

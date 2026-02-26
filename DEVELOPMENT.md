@@ -1920,11 +1920,18 @@ It fetches each service's OpenAPI spec via `/api-docs/json` endpoints. To add a 
 
 ## 19. Authentication & Authorization (Keycloak)
 
+> **Comprehensive guide:** See [AUTHENTICATION.md](AUTHENTICATION.md) for the full reference covering Postman setup, frontend web integration (PKCE), mobile app integration (PKCE), service-to-service auth, token anatomy, troubleshooting, and code examples for React, Angular, React Native, and Flutter.
+
 ### Overview
 
 All APIs are protected by **JWT Bearer token** authentication using **Keycloak** as the identity provider (OIDC/OAuth 2.0). The auth middleware lives in `@rajkumarganesan93/infrastructure` — services consume it automatically via `createServiceApp`.
 
-**Authorization Type:** OAuth 2.0 Resource Owner Password Credentials (ROPC) grant with Keycloak as the Authorization Server. Tokens are RS256-signed JWTs verified via JWKS key discovery.
+**Authorization Type:** OAuth 2.0 with multiple grant types:
+- **Authorization Code + PKCE** — for frontend web apps and mobile apps (recommended)
+- **Resource Owner Password Credentials (ROPC)** — for Postman and API testing
+- **Client Credentials** — for service-to-service communication
+
+All tokens are RS256-signed JWTs verified via JWKS key discovery.
 
 ### Architecture
 
