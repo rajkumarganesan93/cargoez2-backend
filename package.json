@@ -6,10 +6,11 @@
   "workspaces": [
     "packages/*",
     "services/user-service",
-    "services/shared-db-example"
+    "services/shared-db-example",
+    "services/api-portal"
   ],
   "scripts": {
-    "build": "npm run build:packages && npm run build -w @cargoez-be/user-service -w @cargoez-be/shared-db-example",
+    "build": "npm run build:packages && npm run build -w @cargoez-be/user-service -w @cargoez-be/shared-db-example -w @cargoez-be/api-portal",
     "build:packages": "npm run build -w @rajkumarganesan93/domain && npm run build -w @rajkumarganesan93/shared && npm run build -w @rajkumarganesan93/api && npm run build -w @rajkumarganesan93/application && npm run build -w @rajkumarganesan93/infrastructure && npm run build -w @rajkumarganesan93/integrations",
     "lint": "npm run lint --workspaces --if-present",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
@@ -18,6 +19,7 @@
     "migrate:user": "npm run build -w @cargoez-be/user-service && npm run migrate -w @cargoez-be/user-service",
     "migrate:shared-db-example": "npm run build -w @cargoez-be/shared-db-example && npm run migrate -w @cargoez-be/shared-db-example",
     "migrate:all": "npm run migrate:user && npm run migrate:shared-db-example",
+    "dev:portal": "npm run dev -w @cargoez-be/api-portal",
     "publish:packages": "npm run build:packages && npm publish -w @rajkumarganesan93/domain && npm publish -w @rajkumarganesan93/shared && npm publish -w @rajkumarganesan93/api && npm publish -w @rajkumarganesan93/application && npm publish -w @rajkumarganesan93/infrastructure && npm publish -w @rajkumarganesan93/integrations"
   },
   "devDependencies": {

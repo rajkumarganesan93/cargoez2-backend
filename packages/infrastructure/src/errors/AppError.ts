@@ -104,3 +104,16 @@ export class ConflictError extends AppError {
     this.statusCode = 409;
   }
 }
+
+export class ValidationError extends AppError {
+  constructor(code: MessageCode, params?: Record<string, string | number>);
+  constructor(message: string);
+  constructor(codeOrMessage: MessageCode | string, params?: Record<string, string | number>) {
+    if (MESSAGE_CODES.has(codeOrMessage as MessageCode)) {
+      super(codeOrMessage as MessageCode, params);
+    } else {
+      super(codeOrMessage as string, 422);
+    }
+    this.statusCode = 422;
+  }
+}

@@ -91,7 +91,7 @@ export const swaggerSpec = {
               },
             },
           },
-          '400': {
+          '422': {
             description: 'Validation failed (messageCode: VALIDATION_FAILED)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
@@ -119,7 +119,7 @@ export const swaggerSpec = {
               },
             },
           },
-          '400': {
+          '422': {
             description: 'Invalid UUID (messageCode: INVALID_INPUT)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
@@ -149,7 +149,7 @@ export const swaggerSpec = {
               },
             },
           },
-          '400': {
+          '422': {
             description: 'Validation failed (messageCode: VALIDATION_FAILED)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },
@@ -182,7 +182,7 @@ export const swaggerSpec = {
               },
             },
           },
-          '400': {
+          '422': {
             description: 'Invalid UUID (messageCode: INVALID_INPUT)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } },
           },

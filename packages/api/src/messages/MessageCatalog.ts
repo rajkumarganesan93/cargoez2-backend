@@ -21,9 +21,9 @@ export const MessageCatalog: Record<MessageCode, MessageEntry> = {
 
   // ── Validation / Client ────────────────────────────────────
   [MessageCode.BAD_REQUEST]: { status: 400, message: 'Bad request: {reason}' },
-  [MessageCode.VALIDATION_FAILED]: { status: 400, message: 'Validation failed: {reason}' },
-  [MessageCode.FIELD_REQUIRED]: { status: 400, message: '{field} is required' },
-  [MessageCode.INVALID_INPUT]: { status: 400, message: 'Invalid input: {reason}' },
+  [MessageCode.VALIDATION_FAILED]: { status: 422, message: 'Validation failed: {reason}' },
+  [MessageCode.FIELD_REQUIRED]: { status: 422, message: '{field} is required' },
+  [MessageCode.INVALID_INPUT]: { status: 422, message: 'Invalid input: {reason}' },
 
   // ── Auth ───────────────────────────────────────────────────
   [MessageCode.UNAUTHORIZED]: { status: 401, message: 'Authentication required' },

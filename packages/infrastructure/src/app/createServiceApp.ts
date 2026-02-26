@@ -57,6 +57,10 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
   app.use(requestLogger(logger));
 
   if (swaggerSpec) {
+    app.get('/api-docs/json', (_req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.json(swaggerSpec);
+    });
     app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
   }
 

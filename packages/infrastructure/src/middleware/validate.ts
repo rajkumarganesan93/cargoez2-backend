@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { BadRequestError } from '../errors/AppError.js';
+import { ValidationError } from '../errors/AppError.js';
 import { MessageCode } from '@rajkumarganesan93/api';
 
 /**
@@ -39,13 +39,13 @@ function formatZodErrors(error: z.ZodError): string {
 /**
  * Express middleware that validates `req.body` against a zod schema.
  * On success, the parsed (and transformed) result is attached to `req.validated.body`.
- * On failure, throws a BadRequestError with VALIDATION_FAILED and combined error messages.
+ * On failure, throws a ValidationError (422) with VALIDATION_FAILED and combined error messages.
  */
 export function validateBody<T extends z.ZodType>(schema: T) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.body);
     if (!result.success) {
-      throw new BadRequestError(
+      throw new ValidationError(
         MessageCode.VALIDATION_FAILED,
         { reason: formatZodErrors(result.error) },
       );
@@ -65,7 +65,7 @@ export function validateParams<T extends z.ZodType>(schema: T) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.params);
     if (!result.success) {
-      throw new BadRequestError(
+      throw new ValidationError(
         MessageCode.INVALID_INPUT,
         { reason: formatZodErrors(result.error) },
       );
@@ -85,7 +85,7 @@ export function validateQuery<T extends z.ZodType>(schema: T) {
   return (req: Request, _res: Response, next: NextFunction): void => {
     const result = schema.safeParse(req.query);
     if (!result.success) {
-      throw new BadRequestError(
+      throw new ValidationError(
         MessageCode.INVALID_INPUT,
         { reason: formatZodErrors(result.error) },
       );

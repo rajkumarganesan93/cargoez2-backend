@@ -196,12 +196,21 @@ npm run dev -w @cargoez-be/user-service
 npm run dev -w @cargoez-be/shared-db-example
 ```
 
+Optionally, start the **API Portal** (global Swagger UI with service dropdown):
+
+```bash
+npm run dev:portal
+```
+
 ### Verify
 
-| Service | Health Check | Swagger Docs |
-|---------|-------------|-------------|
-| user-service | http://localhost:3001/health | http://localhost:3001/api-docs |
-| shared-db-example | http://localhost:3005/health | http://localhost:3005/api-docs |
+| Service | Health Check | Swagger Docs | JSON Spec |
+|---------|-------------|-------------|-----------|
+| user-service | http://localhost:3001/health | http://localhost:3001/api-docs | http://localhost:3001/api-docs/json |
+| shared-db-example | http://localhost:3005/health | http://localhost:3005/api-docs | http://localhost:3005/api-docs/json |
+| **API Portal** | http://localhost:4000/health | http://localhost:4000 | -- |
+
+The API Portal at `http://localhost:4000` provides a single Swagger UI with a dropdown to switch between all microservice APIs.
 
 ---
 
@@ -432,7 +441,7 @@ export interface AuditEntry {
 
 ### 6.3 @rajkumarganesan93/api
 
-**Version:** 1.3.0 · **Dependencies:** `domain`
+**Version:** 1.4.0 · **Dependencies:** `domain`
 
 API response builders, the centralized **Message Catalog**, and HTTP status constants.
 
@@ -479,9 +488,9 @@ const resolved = resolveMessage(MessageCode.DUPLICATE_EMAIL, { email: 'a@b.com' 
 
 ### 6.4 @rajkumarganesan93/infrastructure
 
-**Version:** 1.4.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv` · **Peers:** `express`, `pino`
+**Version:** 1.6.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv` · **Peers:** `express`, `pino`
 
-Express middleware, error classes, the generic `BaseRepository`, validation middleware, response helpers, Swagger utilities, and the service app factory.
+Express middleware, error classes (`ValidationError`, `BadRequestError`, `NotFoundError`, etc.), the generic `BaseRepository`, validation middleware, response helpers, Swagger utilities, and the service app factory.
 
 #### BaseRepository
 
@@ -545,16 +554,19 @@ export class OrderRepository extends BaseRepository<...> {
 | Class | Status | Usage |
 |-------|--------|-------|
 | `AppError` | varies | Base class — do not throw directly |
-| `BadRequestError` | 400 | Invalid input, missing fields |
+| `BadRequestError` | 400 | Malformed request syntax (invalid JSON, wrong content-type) |
+| `ValidationError` | 422 | Semantic validation failures (invalid email, missing fields, bad UUID) |
 | `UnauthorizedError` | 401 | Authentication required |
 | `ForbiddenError` | 403 | Insufficient permissions |
 | `NotFoundError` | 404 | Resource not found |
 | `ConflictError` | 409 | Duplicate entry, conflict |
 
+**400 vs 422:** Use `BadRequestError` (400) only for malformed request syntax. Use `ValidationError` (422) for semantic validation failures where the request is syntactically valid but the content doesn't pass validation.
+
 All error classes accept either a `MessageCode` (recommended) or a plain string:
 
 ```typescript
-import { NotFoundError, ConflictError, BadRequestError } from '@rajkumarganesan93/infrastructure';
+import { NotFoundError, ConflictError, ValidationError } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
 
 // With MessageCode (recommended)
@@ -564,12 +576,12 @@ throw new NotFoundError(MessageCode.NOT_FOUND, { resource: 'User' });
 throw new ConflictError(MessageCode.DUPLICATE_EMAIL, { email: 'a@b.com' });
 // → 409: { messageCode: "DUPLICATE_EMAIL", error: "Email a@b.com is already in use" }
 
-throw new BadRequestError(MessageCode.INVALID_INPUT, { reason: 'id must be a valid UUID' });
-// → 400: { messageCode: "INVALID_INPUT", error: "Invalid input: id must be a valid UUID" }
+throw new ValidationError(MessageCode.INVALID_INPUT, { reason: 'id must be a valid UUID' });
+// → 422: { messageCode: "INVALID_INPUT", error: "Invalid input: id must be a valid UUID" }
 
 // With plain string (escape hatch)
-throw new BadRequestError('Custom validation message');
-// → 400: { error: "Custom validation message" } (no messageCode)
+throw new ValidationError('Custom validation message');
+// → 422: { error: "Custom validation message" } (no messageCode)
 ```
 
 #### errorHandler Middleware
@@ -587,7 +599,9 @@ app.use(errorHandler({ logger }));
 
 **Behavior:**
 - **JSON parse errors** → 400 with `messageCode: BAD_REQUEST`
+- **Validation errors** → 422 with `messageCode: VALIDATION_FAILED` or `INVALID_INPUT`
 - **PayloadTooLarge** → 413
+- **PostgreSQL unique violations** → 409 with `messageCode: DUPLICATE_ENTRY`
 - **AppError with MessageCode** → structured response with `messageCode` + resolved message
 - **AppError without MessageCode (client, <500)** → raw error message
 - **AppError without MessageCode (server, >=500)** → generic `INTERNAL_ERROR` (prevents message leakage)
@@ -606,7 +620,7 @@ Logs every HTTP request with method, path, status, and duration. Also logs clien
 
 #### Validation Middleware (Zod-based Model Binding)
 
-Validates `req.body`, `req.params`, or `req.query` against a Zod schema. Parsed and transformed data is attached to `req.validated`. On failure, throws a `BadRequestError` with combined error messages.
+Validates `req.body`, `req.params`, or `req.query` against a Zod schema. Parsed and transformed data is attached to `req.validated`. On failure, throws a `ValidationError` (HTTP 422) with combined error messages.
 
 ```typescript
 import { validateBody, validateParams, validateQuery } from '@rajkumarganesan93/infrastructure';
@@ -644,7 +658,7 @@ return sendSuccess(res, user, MessageCode.CREATED, { resource: 'User' });
 
 // Error — HTTP status auto-resolved from MessageCode
 return sendError(res, MessageCode.FIELD_REQUIRED, { field: 'email' });
-// → 400: { success: false, messageCode: "FIELD_REQUIRED", error: "email is required" }
+// → 422: { success: false, messageCode: "FIELD_REQUIRED", error: "email is required" }
 
 // Paginated — HTTP status auto-resolved from MessageCode
 return sendPaginated(res, result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'User' });
@@ -675,11 +689,11 @@ start();
 |----------|------|---------|
 | `serviceName` | `string` | Used for logging |
 | `port` | `number \| string` | HTTP port |
-| `swaggerSpec` | `object?` | OpenAPI spec (served at `/api-docs`) |
+| `swaggerSpec` | `object?` | OpenAPI spec (served at `/api-docs` and `/api-docs/json`) |
 | `routes` | `(app: Express) => void` | Mount routes |
 | `onShutdown` | `() => Promise<void>?` | Cleanup (close DB, etc.) |
 
-**Built-in endpoints:** `/health`, `/api-docs` (if swaggerSpec provided)
+**Built-in endpoints:** `/health`, `/api-docs` (Swagger UI), `/api-docs/json` (raw JSON spec with CORS — used by the API Portal)
 
 #### Swagger Helpers
 
@@ -1358,7 +1372,7 @@ Here is how a single `POST /users` request flows through the architecture:
 ```
 Client → Express → requestLogger → routes → validateBody(CreateUserBody) → asyncHandler → Controller → Use Case → Repository → DB
                                                     ↓ (on validation fail)                                                         ↓
-                                        BadRequestError(VALIDATION_FAILED)                                                         ↓
+                                        ValidationError(VALIDATION_FAILED) → 422                                                   ↓
                                                     ↓                                                                              ↓
 Client ← Express ← errorHandler (if error) ← ← ← ← ← ← ← ← ← ← ← ← Controller ← Use Case ← Repository ← DB result
 ```
@@ -1375,7 +1389,7 @@ Client ← Express ← errorHandler (if error) ← ← ← ← ← ← ← ← �
 
 5. **`validateBody(CreateUserBody)`** middleware:
    - Parses body against Zod schema → trims `name` to `"Alice"`, lowercases email to `"alice@example.com"`
-   - If validation fails → throws `BadRequestError(VALIDATION_FAILED, { reason: "..." })` → caught by `errorHandler`
+   - If validation fails → throws `ValidationError(VALIDATION_FAILED, { reason: "..." })` → caught by `errorHandler` → 422
    - On success → attaches parsed result to `req.validated.body`
 
 6. **`asyncHandler`** wraps the controller call in a try/catch. If the controller throws, the error is forwarded to `errorHandler`.
@@ -1481,15 +1495,17 @@ Controller throws → asyncHandler catches → errorHandler middleware → JSON 
 
 ### Error Class Selection Guide
 
-| Scenario | Error Class | MessageCode |
-|----------|------------|-------------|
-| Missing required field | `BadRequestError` | `FIELD_REQUIRED` |
-| Invalid input format | `BadRequestError` | `INVALID_INPUT` |
-| Not authenticated | `UnauthorizedError` | `UNAUTHORIZED` |
-| No permission | `ForbiddenError` | `FORBIDDEN` |
-| Resource not found | `NotFoundError` | `NOT_FOUND` |
-| Duplicate entry | `ConflictError` | `DUPLICATE_ENTRY` |
-| Duplicate email | `ConflictError` | `DUPLICATE_EMAIL` |
+| Scenario | Error Class | MessageCode | HTTP Status |
+|----------|------------|-------------|-------------|
+| Malformed JSON | `BadRequestError` | `BAD_REQUEST` | 400 |
+| Missing required field | `ValidationError` | `FIELD_REQUIRED` | 422 |
+| Invalid input format | `ValidationError` | `INVALID_INPUT` | 422 |
+| Schema validation failure | `ValidationError` | `VALIDATION_FAILED` | 422 |
+| Not authenticated | `UnauthorizedError` | `UNAUTHORIZED` | 401 |
+| No permission | `ForbiddenError` | `FORBIDDEN` | 403 |
+| Resource not found | `NotFoundError` | `NOT_FOUND` | 404 |
+| Duplicate entry | `ConflictError` | `DUPLICATE_ENTRY` | 409 |
+| Duplicate email | `ConflictError` | `DUPLICATE_EMAIL` | 409 |
 
 ### Best Practices
 
@@ -1512,9 +1528,9 @@ Controller throws → asyncHandler catches → errorHandler middleware → JSON 
 | `FETCHED` | 200 | `{resource} fetched successfully` | `resource` |
 | `LIST_FETCHED` | 200 | `{resource} list fetched successfully` | `resource` |
 | `BAD_REQUEST` | 400 | `Bad request: {reason}` | `reason` |
-| `VALIDATION_FAILED` | 400 | `Validation failed: {reason}` | `reason` |
-| `FIELD_REQUIRED` | 400 | `{field} is required` | `field` |
-| `INVALID_INPUT` | 400 | `Invalid input: {reason}` | `reason` |
+| `VALIDATION_FAILED` | 422 | `Validation failed: {reason}` | `reason` |
+| `FIELD_REQUIRED` | 422 | `{field} is required` | `field` |
+| `INVALID_INPUT` | 422 | `Invalid input: {reason}` | `reason` |
 | `UNAUTHORIZED` | 401 | `Authentication required` | — |
 | `FORBIDDEN` | 403 | `You do not have permission to perform this action` | — |
 | `INVALID_CREDENTIALS` | 401 | `Invalid credentials` | — |
@@ -1644,7 +1660,7 @@ npm test -w @cargoez-be/user-service
 3. Update returns 200 with `messageCode: 'UPDATED'`
 4. Delete returns 200 with `messageCode: 'DELETED'` (soft-delete — record still exists with `isActive: false`)
 5. List returns 200 with pagination meta
-6. Missing required fields return 400 with `messageCode: 'FIELD_REQUIRED'`
+6. Missing required fields return 422 with `messageCode: 'FIELD_REQUIRED'`
 7. Duplicate entries return 409 with appropriate `messageCode`
 
 ---
@@ -1790,10 +1806,11 @@ export type IdParams = z.infer<typeof IdParams>;
 
 ### Error Rules
 
-1. Always throw typed error classes (`BadRequestError`, `NotFoundError`, etc.)
-2. Always use `MessageCode` with placeholders — never raw strings
-3. Let `asyncHandler` + `errorHandler` handle the response formatting
-4. Use `{reason}` for `INVALID_INPUT` / `BAD_REQUEST` / `VALIDATION_FAILED`
+1. Always throw typed error classes (`ValidationError`, `NotFoundError`, `ConflictError`, etc.)
+2. Use `ValidationError` (422) for input validation failures, `BadRequestError` (400) only for malformed syntax
+3. Always use `MessageCode` with placeholders — never raw strings
+4. Let `asyncHandler` + `errorHandler` handle the response formatting
+5. Use `{reason}` for `INVALID_INPUT` / `BAD_REQUEST` / `VALIDATION_FAILED`
 5. Use `{resource}` for `NOT_FOUND`, `CREATED`, `UPDATED`, `DELETED`
 6. Use `{field}` for `FIELD_REQUIRED`, `DUPLICATE_ENTRY`
 7. See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference
@@ -1819,7 +1836,17 @@ const { start } = createServiceApp({
 start();
 ```
 
-`createServiceApp` handles everything: `express.json()`, request logging, Swagger UI at `/api-docs`, health check at `/health`, 404 catch-all, `errorHandler`, and graceful shutdown (`SIGTERM`/`SIGINT`).
+`createServiceApp` handles everything: `express.json()`, request logging, Swagger UI at `/api-docs`, raw JSON spec at `/api-docs/json` (with CORS for the API Portal), health check at `/health`, 404 catch-all, `errorHandler`, and graceful shutdown (`SIGTERM`/`SIGINT`).
+
+### API Portal (Global Swagger)
+
+The API Portal provides a single Swagger UI with a dropdown to switch between all microservice APIs:
+
+```bash
+npm run dev:portal    # starts at http://localhost:4000
+```
+
+It fetches each service's OpenAPI spec via `/api-docs/json` endpoints. To add a new service to the portal, update the `SERVICE_URLS` array in `services/api-portal/src/index.ts`.
 
 ### Git Workflow
 

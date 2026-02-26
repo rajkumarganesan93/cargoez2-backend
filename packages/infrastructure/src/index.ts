@@ -7,6 +7,7 @@ export {
   ForbiddenError,
   NotFoundError,
   ConflictError,
+  ValidationError,
 } from './errors/AppError.js';
 export { errorHandler } from './middleware/errorHandler.js';
 export { requestLogger } from './middleware/requestLogger.js';

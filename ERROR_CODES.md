@@ -36,14 +36,35 @@ Codes are defined in `@rajkumarganesan93/api` → `MessageCode` enum and resolve
 
 ---
 
-## Validation / Client Error Codes
+## Bad Request (400)
 
 | Code | HTTP Status | Message Template | When Used |
 |------|-------------|-----------------|-----------|
-| `BAD_REQUEST` | 400 | `Bad request: {reason}` | Generic bad request (malformed JSON, unsupported content type) |
-| `VALIDATION_FAILED` | 400 | `Validation failed: {reason}` | Request body/params/query failed zod schema validation |
-| `FIELD_REQUIRED` | 400 | `{field} is required` | A specific required field is missing |
-| `INVALID_INPUT` | 400 | `Invalid input: {reason}` | Input is present but invalid (bad UUID format, invalid params) |
+| `BAD_REQUEST` | 400 | `Bad request: {reason}` | Request syntax is malformed (invalid JSON, wrong content-type) |
+
+### Example — Bad Request
+
+```json
+{
+  "success": false,
+  "messageCode": "BAD_REQUEST",
+  "error": "Bad request: Malformed JSON",
+  "statusCode": 400,
+  "timestamp": "2026-02-19T10:00:00.123Z"
+}
+```
+
+---
+
+## Validation Error Codes (422)
+
+Per RFC 4918, **422 Unprocessable Entity** is used when the server understands the request syntax but the content fails semantic validation. This is distinct from 400 which indicates malformed syntax.
+
+| Code | HTTP Status | Message Template | When Used |
+|------|-------------|-----------------|-----------|
+| `VALIDATION_FAILED` | 422 | `Validation failed: {reason}` | Request body/params/query failed Zod schema validation |
+| `FIELD_REQUIRED` | 422 | `{field} is required` | A specific required field is missing |
+| `INVALID_INPUT` | 422 | `Invalid input: {reason}` | Input is present but invalid (bad UUID format, invalid params) |
 
 ### Example — Validation Error
 
@@ -52,7 +73,7 @@ Codes are defined in `@rajkumarganesan93/api` → `MessageCode` enum and resolve
   "success": false,
   "messageCode": "VALIDATION_FAILED",
   "error": "Validation failed: name: name is required; email: invalid email format",
-  "statusCode": 400,
+  "statusCode": 422,
   "timestamp": "2026-02-19T10:00:00.123Z"
 }
 ```
@@ -64,7 +85,7 @@ Codes are defined in `@rajkumarganesan93/api` → `MessageCode` enum and resolve
   "success": false,
   "messageCode": "INVALID_INPUT",
   "error": "Invalid input: id: id must be a valid UUID",
-  "statusCode": 400,
+  "statusCode": 422,
   "timestamp": "2026-02-19T10:00:00.123Z"
 }
 ```
