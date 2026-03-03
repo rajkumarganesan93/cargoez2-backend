@@ -2254,66 +2254,247 @@ See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference of all message c
 
 ## 22. Request Context
 
-The Request Context provides per-request session data (authenticated user, tenant, correlation ID) accessible from **any layer** of the application — controllers, use cases, repositories — without explicitly passing it through function parameters.
+### What Is It?
 
-### How It Works
+The Request Context is a **per-request container** that holds the authenticated user's identity (userId, email, roles, tenantId) and a unique request correlation ID. It is accessible from **any layer** of the application — controllers, use cases, repositories — without passing it through function parameters.
 
-The context uses Node.js `AsyncLocalStorage` (built-in, zero dependencies). A middleware creates the context at request start, and any code in the async chain can read it:
+Built on Node.js `AsyncLocalStorage` (built-in, zero external dependencies). It works like thread-local storage in Java or `HttpContext` in .NET — each request's async chain gets its own isolated context.
+
+### Lifecycle
 
 ```
-Request → AuthMiddleware (sets req.user) → ContextMiddleware (stores in AsyncLocalStorage) → Controller → UseCase → Repository
-                                                                                              ↑              ↑           ↑
-                                                                                         getContext()   getContext()  getContext()
+┌─ HTTP Request arrives ─────────────────────────────────────────────────────┐
+│                                                                            │
+│  1. Auth Middleware        → verifies JWT, sets req.user                   │
+│  2. Context Middleware     → reads req.user, creates RequestContext,       │
+│                              wraps entire request in AsyncLocalStorage      │
+│     ┌──────────────────────────────────────────────────────────────────┐   │
+│     │  CONTEXT IS ACTIVE — scoped to THIS request only                │   │
+│     │                                                                  │   │
+│     │  3. Controller       → getContext() returns context              │   │
+│     │  4. Use Case         → getContext() returns same context         │   │
+│     │  5. Repository       → auto-injects createdBy, modifiedBy       │   │
+│     │                                                                  │   │
+│     └──────────────────────────────────────────────────────────────────┘   │
+│  6. Response sent          → context scope ends, garbage collected         │
+│                                                                            │
+└────────────────────────────────────────────────────────────────────────────┘
+
+Next request → gets a completely NEW, independent context
 ```
 
-### What the Context Holds
+**Key points:**
+- Context is created when the request starts, expires when the response is sent
+- Two concurrent requests have **completely independent** contexts
+- No database, no Redis, no session store needed — pure in-memory, per-request
+- No manual cleanup — Node.js garbage-collects it automatically
+
+### How It Works Internally
+
+**File: `packages/infrastructure/src/context/RequestContext.ts`**
 
 ```typescript
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 interface RequestContext {
-  requestId: string;     // UUID — unique per request, included in response headers and logs
-  userId: string;        // JWT sub (Keycloak user ID), or "anonymous" if unauthenticated
-  userEmail?: string;    // From JWT claims
-  userName?: string;     // From JWT claims
-  roles: string[];       // Realm roles from JWT
-  tenantId?: string;     // From JWT custom claim or X-Tenant-Id header
-  timestamp: string;     // Request start time (ISO 8601)
+  requestId: string;     // UUID — unique per request
+  userId: string;        // from JWT (Keycloak username), or "anonymous"
+  userEmail?: string;    // from JWT claims
+  userName?: string;     // from JWT claims
+  roles: string[];       // realm roles from JWT
+  tenantId?: string;     // from JWT custom claim or X-Tenant-Id header
+  timestamp: string;     // request start time (ISO 8601)
+}
+
+const asyncLocalStorage = new AsyncLocalStorage<RequestContext>();
+```
+
+**File: `packages/infrastructure/src/middleware/contextMiddleware.ts`**
+
+The middleware reads `req.user` (set by auth middleware), builds the context, and wraps the remaining request chain:
+
+```typescript
+export function contextMiddleware(req, res, next) {
+  const user = req.user;   // set by auth middleware
+
+  const context = {
+    requestId: randomUUID(),
+    userId: user?.sub ?? user?.preferredUsername ?? 'anonymous',
+    userEmail: user?.email,
+    userName: user?.name ?? user?.preferredUsername,
+    roles: user?.realmRoles ?? [],
+    tenantId: user?.tokenPayload?.tenant_id ?? req.headers['x-tenant-id'],
+    timestamp: new Date().toISOString(),
+  };
+
+  res.setHeader('X-Request-Id', context.requestId);
+
+  // Everything called from next() runs inside this context scope
+  runWithContext(context, () => next());
 }
 ```
 
-### Accessing Context in Code
+**Middleware order in `createServiceApp`:**
 
-```typescript
-import { getContext, getContextOrNull, getCurrentUserId } from '@rajkumarganesan93/infrastructure';
-
-// In a use case or any async code within a request:
-const ctx = getContext();         // throws if no context (called outside request)
-const ctx = getContextOrNull();   // returns null if no context (safe for scripts/migrations)
-const uid = getCurrentUserId();   // shorthand for getContext().userId
+```
+cors → json → requestLogger → authMiddleware → contextMiddleware → routes → errorHandler
 ```
 
-### Automatic Audit Fields
+### Available Functions
 
-`BaseRepository` automatically injects audit fields from the context on every write:
+All exported from `@rajkumarganesan93/infrastructure`:
 
-| Operation | Fields Set |
+| Function | Returns | When to use |
+|---|---|---|
+| `getContext()` | `RequestContext` | Inside a request — throws if no context |
+| `getContextOrNull()` | `RequestContext \| null` | Code that may run outside requests (safe) |
+| `getCurrentUserId()` | `string` | Quick access to `userId` (throws if no context) |
+| `getCurrentTenantId()` | `string \| undefined` | Quick access to `tenantId` (throws if no context) |
+| `getCurrentUserIdOrNull()` | `string \| undefined` | Safe version — returns `undefined` if no context |
+| `getCurrentTenantIdOrNull()` | `string \| undefined` | Safe version — returns `undefined` if no context |
+| `runWithContext(ctx, fn)` | `T` | For testing — run code within a mock context |
+
+### What Happens Automatically (Zero Code Required)
+
+`BaseRepository` reads the context and injects audit fields on every database write:
+
+| Operation | Fields Auto-Set |
 |---|---|
-| `save()` (INSERT) | `created_by`, `modified_by`, `tenant_id` |
-| `update()` (UPDATE) | `modified_by` |
-| `delete()` (soft-delete) | `modified_by` |
+| `save()` (INSERT) | `created_by` = userId, `modified_by` = userId, `tenant_id` = tenantId |
+| `update()` (UPDATE) | `modified_by` = userId |
+| `delete()` (soft-delete) | `modified_by` = userId |
 
-No code changes needed in controllers, use cases, or repositories — it happens automatically.
+**Before (fields were always null):**
+```json
+{ "createdBy": null, "modifiedBy": null, "tenantId": null }
+```
 
-### Request Tracing
+**After (fields auto-populated):**
+```json
+{ "createdBy": "admin", "modifiedBy": "manager", "tenantId": null }
+```
 
-Every response includes an `X-Request-Id` header. The same `requestId` and `userId` appear in Pino log entries, enabling end-to-end request tracing:
+Every response includes an `X-Request-Id` header, and every Pino log entry includes `requestId` + `userId`:
 
 ```json
-{"level":30,"time":1708934116065,"method":"POST","path":"/users","status":201,"durationMs":45,"requestId":"a1b2c3d4-...","userId":"keycloak-uuid"}
+{"method":"POST","path":"/users","status":201,"durationMs":45,"requestId":"a1b2c3d4-...","userId":"admin"}
+```
+
+### Example 1: Using Context in a Controller (`GET /users/me`)
+
+A real endpoint in `user-service` that returns the current user's identity from the context:
+
+```typescript
+// services/user-service/src/presentation/controllers/UserController.ts
+
+import { getContext, sendSuccess } from '@rajkumarganesan93/infrastructure';
+import { MessageCode } from '@rajkumarganesan93/api';
+
+me = async (_req: ValidatedRequest, res: Response): Promise<Response> => {
+  const ctx = getContext();
+  return sendSuccess(res, {
+    userId: ctx.userId,
+    email: ctx.userEmail,
+    name: ctx.userName,
+    roles: ctx.roles,
+    tenantId: ctx.tenantId,
+    requestId: ctx.requestId,
+  }, MessageCode.FETCHED, { resource: 'Profile' });
+};
+```
+
+**Response when called as `admin`:**
+```json
+{
+  "success": true,
+  "messageCode": "FETCHED",
+  "data": {
+    "userId": "admin",
+    "email": "admin@cargoez.com",
+    "name": "Admin User",
+    "roles": ["admin", "user"],
+    "tenantId": null,
+    "requestId": "493082b3-1055-4c01-97e5-0ebe7943086c"
+  }
+}
+```
+
+### Example 2: Using Context in a Use Case (Audit Logging)
+
+```typescript
+// In any use case — no req object needed
+
+import { getContext } from '@rajkumarganesan93/infrastructure';
+
+export class DeleteUserUseCase {
+  async execute(id: string): Promise<boolean> {
+    const ctx = getContext();
+    logger.info({ userId: ctx.userId, targetId: id }, 'User deletion requested');
+
+    const deleted = await this.userRepository.delete(id);
+    // BaseRepository auto-sets modified_by = ctx.userId on the soft-delete
+
+    return deleted;
+  }
+}
+```
+
+### Example 3: Tenant-Scoped Queries
+
+```typescript
+// Filter data by the current user's tenant
+
+import { getCurrentTenantId } from '@rajkumarganesan93/infrastructure';
+
+export class GetOrdersUseCase {
+  async execute(options?: ListOptions) {
+    const tenantId = getCurrentTenantId();
+    return this.orderRepository.findMany({ tenantId }, options);
+  }
+}
+```
+
+### Example 4: Using Context in Tests
+
+Use `runWithContext()` to simulate a request context in unit tests:
+
+```typescript
+import { runWithContext } from '@rajkumarganesan93/infrastructure';
+
+test('should set createdBy from context', async () => {
+  const mockContext = {
+    requestId: 'test-request-id',
+    userId: 'test-user',
+    roles: ['admin'],
+    timestamp: new Date().toISOString(),
+  };
+
+  const result = await runWithContext(mockContext, async () => {
+    return userRepository.save({ name: 'Test', email: 'test@test.com' });
+  });
+
+  expect(result.createdBy).toBe('test-user');
+});
 ```
 
 ### Running Without Context
 
-Context is optional. Code that runs outside a request scope (migrations, CLI scripts, tests) still works — `getContextOrNull()` returns `null`, and `BaseRepository` simply skips audit field injection.
+Context is optional. Code that runs outside a request scope (migrations, CLI scripts, seeds) still works:
+
+- `getContextOrNull()` returns `null`
+- `getCurrentUserIdOrNull()` returns `undefined`
+- `BaseRepository` skips audit field injection (fields remain `null`)
+- No errors thrown
+
+### When to Use `getContext()` vs Not
+
+| Scenario | Do you need `getContext()`? |
+|---|---|
+| Audit fields (createdBy, modifiedBy) | **No** — `BaseRepository` handles it automatically |
+| `GET /me` endpoint (return current user) | **Yes** — use `getContext()` in the controller |
+| Audit logging in use cases | **Yes** — use `getContext()` to log who did what |
+| Tenant-scoped queries | **Yes** — use `getCurrentTenantId()` in use cases |
+| Standard CRUD operations | **No** — everything works without touching the context |
 
 ---
 
