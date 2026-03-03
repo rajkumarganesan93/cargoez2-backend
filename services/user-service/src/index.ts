@@ -19,6 +19,7 @@ const { start } = createServiceApp({
   port: 3001,
   envPath,
   swaggerSpec,
+  realtime: true,
   routes: (app) => {
     const knex = getKnex();
     const repo = new UserRepository(knex);

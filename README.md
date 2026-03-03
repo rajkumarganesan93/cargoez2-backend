@@ -313,6 +313,8 @@ Every service is bootstrapped with `createServiceApp()` from the infrastructure 
 - Pino request logging
 - Swagger UI at `/api-docs`
 - JWT authentication (auto-enabled when Keycloak env vars are present)
+- Request Context (AsyncLocalStorage) for automatic audit fields
+- Real-time data sync via Socket.IO (opt-in with `realtime: true`)
 - Health check at `/health`
 - Global error handler with Message Catalog integration
 - Graceful shutdown
@@ -325,6 +327,7 @@ const { start } = createServiceApp({
   port: 3002,
   envPath,
   swaggerSpec,
+  realtime: true,
   routes: (app) => {
     app.use(myRoutes);
   },
@@ -332,6 +335,8 @@ const { start } = createServiceApp({
 
 start();
 ```
+
+When `realtime: true` is set, Socket.IO is attached to the same HTTP server. Any `BaseRepository` mutation (save, update, delete) automatically pushes domain events to subscribed frontend clients via WebSocket.
 
 ---
 

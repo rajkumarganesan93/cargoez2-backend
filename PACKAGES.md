@@ -10,7 +10,7 @@ This monorepo contains six npm packages that form a layered architecture for bui
 | [`@rajkumarganesan93/application`](#application) | 1.1.0 | Application-layer utilities: mapping, audit, logging |
 | [`@rajkumarganesan93/shared`](#shared) | 1.4.0 | Shared utilities: DB config, Express helpers, pagination |
 | [`@rajkumarganesan93/api`](#api) | 1.4.0 | API response builders and Message Catalog |
-| [`@rajkumarganesan93/infrastructure`](#infrastructure) | 1.9.0 | Express middleware, error handling, auth, request context, Swagger, app factory |
+| [`@rajkumarganesan93/infrastructure`](#infrastructure) | 2.0.0 | Express middleware, error handling, auth, request context, real-time (Socket.IO), Swagger, app factory |
 | [`@rajkumarganesan93/integrations`](#integrations) | 1.1.0 | Third-party integration interfaces (email, notifications) |
 
 ## Dependency Graph
@@ -176,10 +176,10 @@ const err = error(MessageCode.NOT_FOUND, HttpStatus.NOT_FOUND);
 
 ## infrastructure
 
-**Package:** `@rajkumarganesan93/infrastructure@1.9.0`
+**Package:** `@rajkumarganesan93/infrastructure@2.0.0`
 **Location:** `packages/infrastructure`
 
-The top-level package that ties everything together. Provides Express middleware, error classes, validation, JWT authentication, request context (AsyncLocalStorage), Swagger integration, and the `createServiceApp()` factory for bootstrapping services.
+The top-level package that ties everything together. Provides Express middleware, error classes, validation, JWT authentication, request context (AsyncLocalStorage), real-time data sync (Socket.IO + Domain Event Bus), Swagger integration, and the `createServiceApp()` factory for bootstrapping services.
 
 ### Exports
 
@@ -216,8 +216,13 @@ The top-level package that ties everything together. Provides Express middleware
 | `sendSuccess()` | Function | Send a typed success response |
 | `sendError()` | Function | Send a typed error response |
 | `sendPaginated()` | Function | Send a typed paginated response |
+| **Real-Time Data Sync** | | |
+| `DomainEvent` | Type | Shape of a domain event (entity, action, entityId, data, actor) |
+| `domainEventBus` | Singleton | In-process event bus — BaseRepository emits events here automatically |
+| `createSocketServer()` | Function | Attach Socket.IO to an HTTP server with JWT auth and room management |
+| `RealtimeConfig` | Type | Configuration for Socket.IO (CORS origins, etc.) |
 | **Data Access** | | |
-| `BaseRepository` | Class | Generic Knex-based repository with CRUD, pagination, soft-delete, auto audit fields |
+| `BaseRepository` | Class | Generic Knex-based repository with CRUD, pagination, soft-delete, auto audit fields, auto domain events |
 | **Swagger Utilities** | | |
 | `zodToSwagger()` | Function | Convert Zod schema to Swagger/OpenAPI schema |
 | `SwaggerTypedSuccessResponse()` | Function | Generate typed success response schema |

@@ -7,6 +7,7 @@ import type {
 } from '@rajkumarganesan93/domain';
 import { toEntity } from '@rajkumarganesan93/application';
 import { getCurrentUserIdOrNull, getCurrentTenantIdOrNull } from '../context/RequestContext.js';
+import { domainEventBus } from '../events/DomainEventBus.js';
 
 /**
  * Generic repository that implements all 9 IRepository methods using Knex.
@@ -128,6 +129,31 @@ export class BaseRepository<
     return Math.min(Math.max(1, raw ?? 20), 100);
   }
 
+  /**
+   * Emit a domain event via the in-process event bus.
+   * Socket.IO picks these up and broadcasts to subscribed clients.
+   * Failures are swallowed so they never break the primary operation.
+   */
+  private emitEvent(
+    action: 'created' | 'updated' | 'deleted',
+    entityId: string,
+    data?: Record<string, unknown>,
+  ): void {
+    try {
+      domainEventBus.emitDomainEvent({
+        entity: this.table,
+        action,
+        entityId,
+        data,
+        actor: getCurrentUserIdOrNull() ?? 'system',
+        tenantId: getCurrentTenantIdOrNull(),
+        timestamp: new Date().toISOString(),
+      });
+    } catch {
+      // Event emission must never break the primary DB operation
+    }
+  }
+
   async findById(id: string): Promise<T | null> {
     const row = await this.knex(this.table).where(this.col('id'), id).first();
     return row ? this.rowToEntity(row) : null;
@@ -195,7 +221,9 @@ export class BaseRepository<
     const mapped = this.mapInput(input);
     this.injectAuditFields(mapped, true);
     const [row] = await this.knex(this.table).insert(mapped).returning('*');
-    return this.rowToEntity(row);
+    const entity = this.rowToEntity(row);
+    this.emitEvent('created', (row as Record<string, unknown>).id as string, row as Record<string, unknown>);
+    return entity;
   }
 
   async update(id: string, input: UpdateInput): Promise<T | null> {
@@ -212,7 +240,11 @@ export class BaseRepository<
       .where(this.col('id'), id)
       .update(mapped)
       .returning('*');
-    return rows[0] ? this.rowToEntity(rows[0]) : null;
+    if (rows[0]) {
+      this.emitEvent('updated', id, rows[0] as Record<string, unknown>);
+      return this.rowToEntity(rows[0]);
+    }
+    return null;
   }
 
   /** Soft delete: sets `is_active = false` instead of removing the row. */
@@ -230,6 +262,9 @@ export class BaseRepository<
       .where(this.col('id'), id)
       .where(this.col('isActive'), true)
       .update(updateData);
+    if (count > 0) {
+      this.emitEvent('deleted', id);
+    }
     return count > 0;
   }
 

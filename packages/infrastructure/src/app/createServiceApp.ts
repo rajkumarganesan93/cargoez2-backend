@@ -11,6 +11,8 @@ import { requestLogger } from '../middleware/requestLogger.js';
 import { createAuthMiddleware, type AuthConfig } from '../middleware/authenticate.js';
 import { contextMiddleware } from '../middleware/contextMiddleware.js';
 import { NotFoundError } from '../errors/AppError.js';
+import { createSocketServer, type RealtimeConfig } from '../realtime/createSocketServer.js';
+import type { Server as SocketIOServer } from 'socket.io';
 import type pino from 'pino';
 
 export interface ServiceAppConfig {
@@ -32,11 +34,24 @@ export interface ServiceAppConfig {
    * - **Disabled:** Set to `false` or omit the env vars entirely.
    */
   auth?: AuthConfig | false;
+  /**
+   * Enable real-time data sync via Socket.IO.
+   *
+   * - `true` — enable with defaults (CORS: *, auth from resolved Keycloak config)
+   * - `RealtimeConfig` — enable with custom options (e.g., CORS origins)
+   * - `false` or omitted — disabled
+   *
+   * When enabled, BaseRepository mutations automatically broadcast
+   * domain events to subscribed frontend clients.
+   */
+  realtime?: boolean | RealtimeConfig;
 }
 
 export interface ServiceAppResult {
   app: Express;
   logger: pino.Logger;
+  /** Socket.IO server instance, available when `realtime` is enabled. */
+  io?: SocketIOServer;
   start: () => void;
 }
 
@@ -56,7 +71,7 @@ export interface ServiceAppResult {
  *   start();
  */
 export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
-  const { serviceName, port: defaultPort, swaggerSpec, routes, onShutdown, envPath, auth } = config;
+  const { serviceName, port: defaultPort, swaggerSpec, routes, onShutdown, envPath, auth, realtime } = config;
 
   if (envPath) {
     dotenv.config({ path: envPath });
@@ -102,13 +117,23 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
   );
   app.use(errorHandler({ logger }));
 
+  let io: SocketIOServer | undefined;
+
   function start(): void {
     const server = app.listen(port, () => {
       logger.info({ port }, `${serviceName} listening on port ${port}`);
     });
 
+    if (realtime) {
+      const rtConfig = typeof realtime === 'object' ? realtime : undefined;
+      io = createSocketServer(server, resolvedAuth, logger, rtConfig);
+    }
+
     const gracefulShutdown = (signal: string) => {
       logger.info(`Received ${signal}, shutting down gracefully`);
+      if (io) {
+        io.close();
+      }
       server.close(async () => {
         if (onShutdown) {
           try {
@@ -127,5 +152,5 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
     process.on('SIGINT', () => gracefulShutdown('SIGINT'));
   }
 
-  return { app, logger, start };
+  return { app, logger, io, start };
 }

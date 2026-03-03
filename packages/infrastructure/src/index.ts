@@ -37,6 +37,12 @@ export { authorize } from './middleware/authorize.js';
 export { createServiceApp } from './app/createServiceApp.js';
 export type { ServiceAppConfig, ServiceAppResult } from './app/createServiceApp.js';
 
+export type { DomainEvent } from './events/DomainEventBus.js';
+export { domainEventBus } from './events/DomainEventBus.js';
+
+export { createSocketServer } from './realtime/createSocketServer.js';
+export type { RealtimeConfig } from './realtime/createSocketServer.js';
+
 export { IdParams, BaseEntitySchema } from './schemas/common.js';
 
 export {

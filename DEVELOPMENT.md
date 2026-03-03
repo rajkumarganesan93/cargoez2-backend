@@ -36,6 +36,7 @@
 20. [API Portal (Global Swagger)](#20-api-portal-global-swagger)
 21. [Error Codes Reference](#21-error-codes-reference)
 22. [Request Context](#22-request-context)
+23. [Real-Time Data Sync (Socket.IO)](#23-real-time-data-sync-socketio)
 
 ---
 
@@ -2495,6 +2496,163 @@ Context is optional. Code that runs outside a request scope (migrations, CLI scr
 | Audit logging in use cases | **Yes** — use `getContext()` to log who did what |
 | Tenant-scoped queries | **Yes** — use `getCurrentTenantId()` in use cases |
 | Standard CRUD operations | **No** — everything works without touching the context |
+
+---
+
+## 23. Real-Time Data Sync (Socket.IO)
+
+When multiple users view the same data, changes made by one user are pushed to all others instantly — no page refresh required. This is powered by **Socket.IO** and an in-process **Domain Event Bus**.
+
+### How It Works
+
+```mermaid
+sequenceDiagram
+    participant UserA as User A (Browser)
+    participant UserB as User B (Browser)
+    participant SIO as Socket.IO Server
+    participant Repo as BaseRepository
+    participant DB as PostgreSQL
+
+    UserA->>SIO: connect(jwt) + subscribe("entity:users")
+    UserB->>SIO: connect(jwt) + subscribe("entity:users")
+    
+    UserB->>Repo: PUT /users/abc-123
+    Repo->>DB: UPDATE users SET ...
+    DB-->>Repo: updated row
+    Repo->>SIO: DomainEvent(entity.updated)
+    SIO-->>UserA: entity.updated { entity: "users", entityId: "abc-123", data: {...} }
+    SIO-->>UserB: entity.updated { entity: "users", entityId: "abc-123", data: {...} }
+    UserA->>UserA: re-fetch or patch local state
+```
+
+### Architecture
+
+```
+BaseRepository.save/update/delete()
+  → DomainEventBus.emitDomainEvent()
+    → Socket.IO broadcasts to rooms:
+        • entity:{tableName}         (list views)
+        • entity:{tableName}:{id}    (detail views)
+        • tenant:{tenantId}          (tenant isolation)
+```
+
+### Enabling Real-Time in a Service
+
+Add `realtime: true` to your `createServiceApp` config:
+
+```typescript
+const { start } = createServiceApp({
+  serviceName: 'user-service',
+  port: 3001,
+  realtime: true,    // enables Socket.IO on the same HTTP server
+  swaggerSpec,
+  routes: (app) => { ... },
+});
+start();
+```
+
+That's it. All `BaseRepository` mutations (save, update, delete) automatically emit domain events. Socket.IO broadcasts them to subscribed clients.
+
+### Domain Event Shape
+
+Every event emitted by BaseRepository follows this structure:
+
+```typescript
+interface DomainEvent {
+  entity: string;       // table name, e.g. "users"
+  action: 'created' | 'updated' | 'deleted';
+  entityId: string;     // primary key of the affected row
+  data?: Record<string, unknown>;  // the changed entity (omitted for delete)
+  actor: string;        // userId from RequestContext (or "system")
+  tenantId?: string;    // from RequestContext
+  timestamp: string;    // ISO 8601
+}
+```
+
+### Room Strategy
+
+Clients subscribe to rooms to receive only relevant events:
+
+| Room Pattern | Purpose | Example |
+|---|---|---|
+| `entity:{table}` | All changes for an entity type (list pages) | `entity:users` |
+| `entity:{table}:{id}` | Changes to a specific record (detail pages) | `entity:users:abc-123` |
+| `tenant:{tenantId}` | All events scoped to a tenant | `tenant:acme-corp` |
+
+### Frontend Integration (React)
+
+```typescript
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3001', {
+  auth: { token: keycloakToken },
+});
+
+// Subscribe to a room
+socket.emit('subscribe', { room: 'entity:users' });
+
+// Listen for events
+socket.on('entity.created', (event) => {
+  console.log('New user created:', event.entityId);
+  refetchUsers();
+});
+
+socket.on('entity.updated', (event) => {
+  console.log('User updated:', event.entityId);
+  refetchUsers();
+});
+
+socket.on('entity.deleted', (event) => {
+  console.log('User deleted:', event.entityId);
+  refetchUsers();
+});
+
+// Unsubscribe when leaving the page
+socket.emit('unsubscribe', { room: 'entity:users' });
+```
+
+### Custom Events
+
+Services can emit custom events beyond automatic BaseRepository events:
+
+```typescript
+import { domainEventBus } from '@rajkumarganesan93/infrastructure';
+
+domainEventBus.emitDomainEvent({
+  entity: 'orders',
+  action: 'updated',
+  entityId: orderId,
+  data: { status: 'shipped' },
+  actor: getCurrentUserId(),
+  timestamp: new Date().toISOString(),
+});
+```
+
+### Security
+
+- **JWT authentication on handshake** — clients must provide a valid Keycloak token when connecting
+- **Tenant isolation** — events are scoped to rooms; clients in `tenant:acme` only see `acme` events
+- **Room validation** — only valid room patterns (`entity:*`, `tenant:*`) are accepted
+- **Same auth config** — Socket.IO reuses the same Keycloak JWKS configuration as REST endpoints
+
+### Configuration Options
+
+```typescript
+createServiceApp({
+  // ...
+  realtime: {
+    corsOrigins: ['http://localhost:5173', 'http://localhost:5174'],
+  },
+});
+```
+
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `corsOrigins` | `string \| string[]` | `'*'` | Allowed origins for WebSocket connections |
+
+### Graceful Shutdown
+
+When the service receives SIGTERM/SIGINT, Socket.IO connections are closed before the HTTP server shuts down. No additional configuration needed.
 
 ---
 
