@@ -7,6 +7,7 @@ import type { UserController } from './controllers/UserController.js';
 export function createUserRoutes(controller: UserController): Router {
   const router = Router();
 
+  router.get('/users/me', asyncHandler(controller.me));
   router.get('/users', asyncHandler(controller.getAll));
   router.get('/users/:id', validateParams(IdParams), asyncHandler(controller.getById));
   router.post('/users', authorize('admin'), validateBody(CreateUserBody), asyncHandler(controller.create));

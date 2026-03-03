@@ -61,6 +61,38 @@ export const swaggerSpec = {
         },
       },
     },
+    '/users/me': {
+      get: {
+        tags: ['Users'],
+        summary: 'Get current user profile (from context)',
+        description:
+          'Returns the authenticated user\'s identity from the server-side Request Context. ' +
+          'Demonstrates how `getContext()` provides request-scoped data (userId, roles, requestId) ' +
+          'available in any layer without passing through function parameters. ' +
+          'The context is created per-request and automatically expires when the response is sent.',
+        responses: {
+          '200': {
+            description: 'Current user profile (messageCode: FETCHED)',
+            content: {
+              'application/json': {
+                schema: SwaggerTypedSuccessResponse({
+                  type: 'object',
+                  properties: {
+                    userId: { type: 'string', example: 'admin' },
+                    email: { type: 'string', example: 'admin@cargoez.com' },
+                    name: { type: 'string', example: 'Admin User' },
+                    roles: { type: 'array', items: { type: 'string' }, example: ['admin', 'user'] },
+                    tenantId: { type: 'string', nullable: true, example: null },
+                    requestId: { type: 'string', format: 'uuid', example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' },
+                  },
+                }),
+              },
+            },
+          },
+          ...SwaggerAuthResponses,
+        },
+      },
+    },
     '/users': {
       get: {
         tags: ['Users'],

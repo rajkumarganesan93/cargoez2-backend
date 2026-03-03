@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import type { ValidatedRequest, IdParams } from '@rajkumarganesan93/infrastructure';
-import { NotFoundError, sendSuccess, sendPaginated } from '@rajkumarganesan93/infrastructure';
+import { NotFoundError, sendSuccess, sendPaginated, getContext } from '@rajkumarganesan93/infrastructure';
 import { MessageCode } from '@rajkumarganesan93/api';
 import { parsePaginationFromQuery } from '@rajkumarganesan93/shared';
 import type { CreateUserBody, UpdateUserBody } from '../models/user.models.js';
@@ -20,6 +20,24 @@ export class UserController {
     private readonly updateUserUseCase: UpdateUserUseCase,
     private readonly deleteUserUseCase: DeleteUserUseCase,
   ) {}
+
+  /**
+   * GET /users/me — returns the current authenticated user's context.
+   * Demonstrates how getContext() provides request-scoped data
+   * (userId, roles, requestId, etc.) from any layer without
+   * passing it through function parameters.
+   */
+  me = async (_req: ValidatedRequest, res: Response): Promise<Response> => {
+    const ctx = getContext();
+    return sendSuccess(res, {
+      userId: ctx.userId,
+      email: ctx.userEmail,
+      name: ctx.userName,
+      roles: ctx.roles,
+      tenantId: ctx.tenantId,
+      requestId: ctx.requestId,
+    }, MessageCode.FETCHED, { resource: 'Profile' });
+  };
 
   create = async (req: ValidatedRequest<CreateUserBody>, res: Response): Promise<Response> => {
     const user = await this.createUserUseCase.execute(req.validated.body);
