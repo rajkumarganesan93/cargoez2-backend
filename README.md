@@ -286,7 +286,7 @@ All 6 packages are published to [GitHub Packages](https://github.com/rajkumargan
 | `@rajkumarganesan93/application` | 1.1.0 | Entity mapper (`toEntity`/`toRow`), audit service, Pino logger |
 | `@rajkumarganesan93/api` | 1.4.0 | `MessageCode`, `MessageCatalog`, response builders: `success()`, `error()`, `successPaginated()` |
 | `@rajkumarganesan93/shared` | 1.4.0 | `getDbConfig()`, `asyncHandler()`, `parsePaginationFromQuery()` |
-| `@rajkumarganesan93/infrastructure` | 1.8.0 | `createServiceApp()`, error classes, auth middleware, validation, Swagger utilities, `BaseRepository` |
+| `@rajkumarganesan93/infrastructure` | 1.9.0 | `createServiceApp()`, error classes, auth middleware, request context, validation, Swagger utilities, `BaseRepository` |
 | `@rajkumarganesan93/integrations` | 1.1.0 | `IEmailProvider`, `INotificationProvider` + stub implementations |
 
 ### Dependency Graph

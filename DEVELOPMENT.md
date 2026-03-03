@@ -35,6 +35,7 @@
 19. [Authentication & Authorization (Keycloak)](#19-authentication--authorization-keycloak)
 20. [API Portal (Global Swagger)](#20-api-portal-global-swagger)
 21. [Error Codes Reference](#21-error-codes-reference)
+22. [Request Context](#22-request-context)
 
 ---
 
@@ -494,9 +495,9 @@ const resolved = resolveMessage(MessageCode.DUPLICATE_EMAIL, { email: 'a@b.com' 
 
 ### 6.4 @rajkumarganesan93/infrastructure
 
-**Version:** 1.8.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv`, `cors`, `jsonwebtoken`, `jwks-rsa` · **Peers:** `express`, `pino`
+**Version:** 1.9.0 · **Dependencies:** `domain`, `application`, `api`, `knex`, `zod`, `zod-to-json-schema`, `swagger-ui-express`, `dotenv`, `cors`, `jsonwebtoken`, `jwks-rsa` · **Peers:** `express`, `pino`
 
-Express middleware, error classes (`ValidationError`, `BadRequestError`, `NotFoundError`, etc.), the generic `BaseRepository`, validation middleware, response helpers, Swagger utilities, and the service app factory.
+Express middleware, error classes (`ValidationError`, `BadRequestError`, `NotFoundError`, etc.), the generic `BaseRepository`, validation middleware, response helpers, Swagger utilities, request context (AsyncLocalStorage), and the service app factory.
 
 #### BaseRepository
 
@@ -538,9 +539,10 @@ export class UserRepository
 - `findAll()` returns only **active** records (`is_active = true`)
 - `findById()` returns any record including inactive (for admin lookups)
 - `mapCriteria()` **throws** on unknown criteria keys to prevent silent empty queries from typos
-- `update()` automatically sets `modified_at` to `NOW()`
-- `save()` uses `INSERT ... RETURNING *` (PostgreSQL-specific)
+- `update()` automatically sets `modified_at` to `NOW()` and `modified_by` from context
+- `save()` uses `INSERT ... RETURNING *` (PostgreSQL-specific), auto-sets `created_by`, `modified_by`, `tenant_id` from context
 - Limit is clamped between 1 and 100
+- Audit fields (`created_by`, `modified_by`, `tenant_id`) are injected automatically from the Request Context — see [Section 22](#22-request-context)
 
 **For complex queries** (JOINs, transactions), access the protected `this.knex` instance:
 
@@ -1739,7 +1741,7 @@ All 6 packages are published to [GitHub Packages](https://github.com/rajkumargan
 |---------|---------|
 | `@rajkumarganesan93/domain` | 1.4.0 |
 | `@rajkumarganesan93/application` | 1.1.0 |
-| `@rajkumarganesan93/infrastructure` | 1.8.0 |
+| `@rajkumarganesan93/infrastructure` | 1.9.0 |
 | `@rajkumarganesan93/api` | 1.4.0 |
 | `@rajkumarganesan93/shared` | 1.4.0 |
 | `@rajkumarganesan93/integrations` | 1.1.0 |
@@ -2247,6 +2249,71 @@ const SERVICE_URLS = [
 ## 21. Error Codes Reference
 
 See [ERROR_CODES.md](ERROR_CODES.md) for the complete reference of all message codes, HTTP statuses, message templates, placeholders, and example request/response payloads.
+
+---
+
+## 22. Request Context
+
+The Request Context provides per-request session data (authenticated user, tenant, correlation ID) accessible from **any layer** of the application — controllers, use cases, repositories — without explicitly passing it through function parameters.
+
+### How It Works
+
+The context uses Node.js `AsyncLocalStorage` (built-in, zero dependencies). A middleware creates the context at request start, and any code in the async chain can read it:
+
+```
+Request → AuthMiddleware (sets req.user) → ContextMiddleware (stores in AsyncLocalStorage) → Controller → UseCase → Repository
+                                                                                              ↑              ↑           ↑
+                                                                                         getContext()   getContext()  getContext()
+```
+
+### What the Context Holds
+
+```typescript
+interface RequestContext {
+  requestId: string;     // UUID — unique per request, included in response headers and logs
+  userId: string;        // JWT sub (Keycloak user ID), or "anonymous" if unauthenticated
+  userEmail?: string;    // From JWT claims
+  userName?: string;     // From JWT claims
+  roles: string[];       // Realm roles from JWT
+  tenantId?: string;     // From JWT custom claim or X-Tenant-Id header
+  timestamp: string;     // Request start time (ISO 8601)
+}
+```
+
+### Accessing Context in Code
+
+```typescript
+import { getContext, getContextOrNull, getCurrentUserId } from '@rajkumarganesan93/infrastructure';
+
+// In a use case or any async code within a request:
+const ctx = getContext();         // throws if no context (called outside request)
+const ctx = getContextOrNull();   // returns null if no context (safe for scripts/migrations)
+const uid = getCurrentUserId();   // shorthand for getContext().userId
+```
+
+### Automatic Audit Fields
+
+`BaseRepository` automatically injects audit fields from the context on every write:
+
+| Operation | Fields Set |
+|---|---|
+| `save()` (INSERT) | `created_by`, `modified_by`, `tenant_id` |
+| `update()` (UPDATE) | `modified_by` |
+| `delete()` (soft-delete) | `modified_by` |
+
+No code changes needed in controllers, use cases, or repositories — it happens automatically.
+
+### Request Tracing
+
+Every response includes an `X-Request-Id` header. The same `requestId` and `userId` appear in Pino log entries, enabling end-to-end request tracing:
+
+```json
+{"level":30,"time":1708934116065,"method":"POST","path":"/users","status":201,"durationMs":45,"requestId":"a1b2c3d4-...","userId":"keycloak-uuid"}
+```
+
+### Running Without Context
+
+Context is optional. Code that runs outside a request scope (migrations, CLI scripts, tests) still works — `getContextOrNull()` returns `null`, and `BaseRepository` simply skips audit field injection.
 
 ---
 

@@ -1,5 +1,16 @@
 export { z } from 'zod';
 
+export type { RequestContext } from './context/RequestContext.js';
+export {
+  runWithContext,
+  getContext,
+  getContextOrNull,
+  getCurrentUserId,
+  getCurrentTenantId,
+  getCurrentUserIdOrNull,
+  getCurrentTenantIdOrNull,
+} from './context/RequestContext.js';
+
 export {
   AppError,
   BadRequestError,

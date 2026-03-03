@@ -140,7 +140,7 @@ export function createAuthMiddleware(config: AuthConfig) {
       const payload = jwt.verify(token, publicKey, verifyOptions) as Record<string, unknown>;
 
       const authUser: AuthUser = {
-        sub: payload.sub as string,
+        sub: (payload.sub ?? payload.preferred_username) as string,
         email: payload.email as string | undefined,
         preferredUsername: payload.preferred_username as string | undefined,
         name: payload.name as string | undefined,

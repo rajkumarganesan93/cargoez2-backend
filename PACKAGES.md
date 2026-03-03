@@ -10,7 +10,7 @@ This monorepo contains six npm packages that form a layered architecture for bui
 | [`@rajkumarganesan93/application`](#application) | 1.1.0 | Application-layer utilities: mapping, audit, logging |
 | [`@rajkumarganesan93/shared`](#shared) | 1.4.0 | Shared utilities: DB config, Express helpers, pagination |
 | [`@rajkumarganesan93/api`](#api) | 1.4.0 | API response builders and Message Catalog |
-| [`@rajkumarganesan93/infrastructure`](#infrastructure) | 1.8.0 | Express middleware, error handling, auth, Swagger, app factory |
+| [`@rajkumarganesan93/infrastructure`](#infrastructure) | 1.9.0 | Express middleware, error handling, auth, request context, Swagger, app factory |
 | [`@rajkumarganesan93/integrations`](#integrations) | 1.1.0 | Third-party integration interfaces (email, notifications) |
 
 ## Dependency Graph
@@ -176,17 +176,26 @@ const err = error(MessageCode.NOT_FOUND, HttpStatus.NOT_FOUND);
 
 ## infrastructure
 
-**Package:** `@rajkumarganesan93/infrastructure@1.8.0`
+**Package:** `@rajkumarganesan93/infrastructure@1.9.0`
 **Location:** `packages/infrastructure`
 
-The top-level package that ties everything together. Provides Express middleware, error classes, validation, JWT authentication, Swagger integration, and the `createServiceApp()` factory for bootstrapping services.
+The top-level package that ties everything together. Provides Express middleware, error classes, validation, JWT authentication, request context (AsyncLocalStorage), Swagger integration, and the `createServiceApp()` factory for bootstrapping services.
 
 ### Exports
 
 | Export | Kind | Purpose |
 |---|---|---|
 | **App Factory** | | |
-| `createServiceApp()` | Function | Bootstraps an Express app with middleware, Swagger, auth, logging |
+| `createServiceApp()` | Function | Bootstraps an Express app with middleware, Swagger, auth, context, logging |
+| **Request Context** | | |
+| `RequestContext` | Type | Shape of the per-request context |
+| `getContext()` | Function | Get current request context (throws if none) |
+| `getContextOrNull()` | Function | Get current request context or null |
+| `getCurrentUserId()` | Function | Shorthand for `getContext().userId` |
+| `getCurrentTenantId()` | Function | Shorthand for `getContext().tenantId` |
+| `getCurrentUserIdOrNull()` | Function | Safe version — returns `undefined` if no context |
+| `getCurrentTenantIdOrNull()` | Function | Safe version — returns `undefined` if no context |
+| `runWithContext()` | Function | Execute code within a context scope (for testing) |
 | **Error Classes** | | |
 | `AppError` | Class | Base error class with message code |
 | `BadRequestError` | Class | 400 Bad Request |
@@ -208,7 +217,7 @@ The top-level package that ties everything together. Provides Express middleware
 | `sendError()` | Function | Send a typed error response |
 | `sendPaginated()` | Function | Send a typed paginated response |
 | **Data Access** | | |
-| `BaseRepository` | Class | Generic Knex-based repository with CRUD, pagination, soft-delete |
+| `BaseRepository` | Class | Generic Knex-based repository with CRUD, pagination, soft-delete, auto audit fields |
 | **Swagger Utilities** | | |
 | `zodToSwagger()` | Function | Convert Zod schema to Swagger/OpenAPI schema |
 | `SwaggerTypedSuccessResponse()` | Function | Generate typed success response schema |

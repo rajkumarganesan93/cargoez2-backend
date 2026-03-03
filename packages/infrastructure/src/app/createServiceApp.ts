@@ -9,6 +9,7 @@ import { success, MessageCode } from '@rajkumarganesan93/api';
 import { errorHandler } from '../middleware/errorHandler.js';
 import { requestLogger } from '../middleware/requestLogger.js';
 import { createAuthMiddleware, type AuthConfig } from '../middleware/authenticate.js';
+import { contextMiddleware } from '../middleware/contextMiddleware.js';
 import { NotFoundError } from '../errors/AppError.js';
 import type pino from 'pino';
 
@@ -91,6 +92,8 @@ export function createServiceApp(config: ServiceAppConfig): ServiceAppResult {
     logger.info('JWT authentication enabled (issuer: %s)', resolvedAuth.issuer);
     app.use(createAuthMiddleware(resolvedAuth));
   }
+
+  app.use(contextMiddleware);
 
   routes(app);
 

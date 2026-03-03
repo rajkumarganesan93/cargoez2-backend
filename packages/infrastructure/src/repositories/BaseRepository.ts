@@ -6,6 +6,7 @@ import type {
   ListOptions,
 } from '@rajkumarganesan93/domain';
 import { toEntity } from '@rajkumarganesan93/application';
+import { getCurrentUserIdOrNull, getCurrentTenantIdOrNull } from '../context/RequestContext.js';
 
 /**
  * Generic repository that implements all 9 IRepository methods using Knex.
@@ -93,6 +94,27 @@ export class BaseRepository<
   }
 
   /**
+   * Inject audit fields (createdBy, modifiedBy, tenantId) from the current
+   * RequestContext into the mapped row. Uses safe accessors so the repository
+   * still works outside a request scope (migrations, scripts, tests).
+   */
+  private injectAuditFields(mapped: Record<string, unknown>, isCreate: boolean): void {
+    const userId = getCurrentUserIdOrNull();
+    const tenantId = getCurrentTenantIdOrNull();
+
+    if (isCreate) {
+      const createdByCol = this.columnMap['createdBy'];
+      if (createdByCol && userId) mapped[createdByCol] = userId;
+
+      const tenantCol = this.columnMap['tenantId'];
+      if (tenantCol && tenantId) mapped[tenantCol] = tenantId;
+    }
+
+    const modifiedByCol = this.columnMap['modifiedBy'];
+    if (modifiedByCol && userId) mapped[modifiedByCol] = userId;
+  }
+
+  /**
    * Resolve sortBy to a safe column name. Falls back to the createdAt column
    * if the property is not in the ColumnMap.
    */
@@ -171,6 +193,7 @@ export class BaseRepository<
 
   async save(input: CreateInput): Promise<T> {
     const mapped = this.mapInput(input);
+    this.injectAuditFields(mapped, true);
     const [row] = await this.knex(this.table).insert(mapped).returning('*');
     return this.rowToEntity(row);
   }
@@ -183,6 +206,7 @@ export class BaseRepository<
     if (modifiedAtCol) {
       mapped[modifiedAtCol] = this.knex.fn.now();
     }
+    this.injectAuditFields(mapped, false);
 
     const rows = await this.knex(this.table)
       .where(this.col('id'), id)
@@ -200,6 +224,7 @@ export class BaseRepository<
     if (modifiedAtCol) {
       updateData[modifiedAtCol] = this.knex.fn.now();
     }
+    this.injectAuditFields(updateData, false);
 
     const count = await this.knex(this.table)
       .where(this.col('id'), id)
