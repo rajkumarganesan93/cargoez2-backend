@@ -47,6 +47,7 @@ export class UserController {
   getAll = async (req: ValidatedRequest, res: Response): Promise<Response> => {
     const pagination = parsePaginationFromQuery(req.query as Record<string, unknown>, {
       allowedSortFields: ALLOWED_SORT_FIELDS,
+      defaultSortOrder: 'desc',
     });
     const result = await this.getAllUsersUseCase.execute({ pagination });
     return sendPaginated(res, result.items, result.meta, MessageCode.LIST_FETCHED, { resource: 'User' });
