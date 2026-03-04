@@ -1,0 +1,32 @@
+{
+  "name": "shared-db-example",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/shared-db-example/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/shared-db-example",
+        "main": "apps/shared-db-example/src/main.ts",
+        "tsConfig": "apps/shared-db-example/tsconfig.app.json",
+        "assets": []
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node -r ./register-paths.js dist/apps/shared-db-example/src/main.js"
+      }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "npx knex migrate:latest --knexfile apps/shared-db-example/knexfile.ts"
+      }
+    }
+  }
+}

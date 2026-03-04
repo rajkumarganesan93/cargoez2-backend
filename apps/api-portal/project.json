@@ -1,0 +1,26 @@
+{
+  "name": "api-portal",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/api-portal/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/api-portal",
+        "main": "apps/api-portal/src/main.ts",
+        "tsConfig": "apps/api-portal/tsconfig.app.json",
+        "assets": []
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node -r ./register-paths.js dist/apps/api-portal/src/main.js"
+      }
+    }
+  }
+}

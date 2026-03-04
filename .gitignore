@@ -1,41 +1,8 @@
-node_modules/
-dist/
-*.js.map
-*.d.ts.map
-
-# Environment files with secrets
+node_modules
+dist
+tmp
 .env
-!.env.example
-
-# IDE
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Coverage
-coverage/
-
-# Build artifacts
-*.tsbuildinfo
-
-# Cursor
+*.local
+.nx/cache
+.nx/workspace-data
 .cursor/
-
-# Agent transcripts
-agent-transcripts/
-
-# MCP
-mcps/
-
-# Terminals
-terminals/
-
-# Temp
-commit-msg.txt
-
-# GitHub workflows (PAT needs workflow scope to push)
-.github/
