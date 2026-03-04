@@ -6,7 +6,7 @@ import { HealthController } from './presentation/controllers/health.controller';
 
 @Module({
   imports: [
-    DatabaseModule.forRoot({ databaseEnvKey: 'SHARED_DB_SERVICE_DB' }),
+    DatabaseModule.forRoot({ connectionPrefix: 'SHARED_DB' }),
     AuthModule,
     RealtimeModule,
     CountriesModule,

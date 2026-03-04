@@ -128,7 +128,7 @@ All features from the original architecture were re-implemented in NestJS:
 2. **DI tokens bridge the gap** — NestJS's `@Inject(TOKEN)` pattern maps perfectly to the domain interface / infrastructure implementation split
 3. **Global pipes/filters/interceptors** replace most Express middleware — `ValidationPipe`, `GlobalExceptionFilter`, `ContextInterceptor` cover what previously required 5+ middleware functions
 4. **Nx caching is significant** — builds that previously took 10+ seconds now complete in <1 second when cached
-5. **Per-service databases** — `DatabaseModule.forRoot({ databaseEnvKey })` pattern cleanly supports multi-database microservices
+5. **Per-service databases** — `DatabaseModule.forRoot({ connectionPrefix })` pattern cleanly supports per-service database connections with independent connection strings
 
 ---
 

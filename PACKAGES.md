@@ -137,7 +137,7 @@ NestJS database module that provides a configured Knex.js connection pool via de
 | Export | Kind | Purpose |
 |---|---|---|
 | `DatabaseModule` | NestJS Module | `DatabaseModule.forRoot(options?)` — creates a global Knex provider |
-| `DatabaseModuleOptions` | Interface | `{ databaseEnvKey?, database? }` — per-service DB name config |
+| `DatabaseModuleOptions` | Interface | `{ connectionPrefix?, databaseEnvKey?, database? }` — per-service DB connection config |
 | `KNEX_CONNECTION` | DI Token | Injection token for the Knex instance |
 | `InjectKnex` | Decorator | `@InjectKnex()` — shorthand for `@Inject(KNEX_CONNECTION)` |
 
@@ -147,7 +147,7 @@ NestJS database module that provides a configured Knex.js connection pool via de
 // app.module.ts — each service specifies its database via env key
 @Module({
   imports: [
-    DatabaseModule.forRoot({ databaseEnvKey: 'USER_SERVICE_DB' }),
+    DatabaseModule.forRoot({ connectionPrefix: 'USER_SERVICE' }),
   ],
 })
 export class AppModule {}
@@ -169,11 +169,17 @@ export class UserRepository extends BaseRepository<User> {
 
 | Option | Type | Description |
 |---|---|---|
-| `databaseEnvKey` | `string` | Env variable name holding the database name (e.g., `'USER_SERVICE_DB'`) |
-| `database` | `string` | Explicit database name (overrides env) |
+| `connectionPrefix` | `string` | Env variable prefix for per-service connection. Reads `{PREFIX}_DB_HOST`, `{PREFIX}_DB_PORT`, `{PREFIX}_DB_USER`, `{PREFIX}_DB_PASSWORD`, `{PREFIX}_DB_NAME`, falling back to shared `DB_*` values. |
+| `databaseEnvKey` | `string` | Env variable name holding just the database name (legacy, still supported) |
+| `database` | `string` | Explicit database name (overrides everything) |
 | _(none)_ | — | Falls back to `DB_NAME` env var, then `'cargoez'` |
 
-Connection settings (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`) are always read from environment variables.
+**Resolution order for each connection field** (e.g., host):
+1. `{PREFIX}_DB_HOST` (if `connectionPrefix` is set and the env var exists)
+2. `DB_HOST` (shared default)
+3. Hardcoded fallback (`'localhost'`)
+
+This allows services to share a single database server (just set `{PREFIX}_DB_NAME`) or use completely independent connection strings (set all `{PREFIX}_DB_*` vars).
 
 ---
 

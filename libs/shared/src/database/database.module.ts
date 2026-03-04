@@ -4,6 +4,7 @@ import Knex from 'knex';
 export const KNEX_CONNECTION = 'KNEX_CONNECTION';
 
 export interface DatabaseModuleOptions {
+  connectionPrefix?: string;
   databaseEnvKey?: string;
   database?: string;
 }
@@ -24,20 +25,22 @@ export class DatabaseModule {
               knexConfig = options as Knex.Knex.Config;
             } else {
               const opts = options as DatabaseModuleOptions | undefined;
-              const dbName = opts?.database
-                ?? (opts?.databaseEnvKey ? process.env[opts.databaseEnvKey] : undefined)
-                ?? process.env['DB_NAME']
+              const p = opts?.connectionPrefix;
+              const env = (key: string) => process.env[key];
+
+              const host     = (p && env(`${p}_DB_HOST`))     ?? env('DB_HOST')     ?? 'localhost';
+              const port     = (p && env(`${p}_DB_PORT`))      ?? env('DB_PORT')     ?? '5432';
+              const user     = (p && env(`${p}_DB_USER`))      ?? env('DB_USER')     ?? 'postgres';
+              const password = (p && env(`${p}_DB_PASSWORD`))   ?? env('DB_PASSWORD') ?? 'postgres';
+              const database = opts?.database
+                ?? (p && env(`${p}_DB_NAME`))
+                ?? (opts?.databaseEnvKey ? env(opts.databaseEnvKey) : undefined)
+                ?? env('DB_NAME')
                 ?? 'cargoez';
 
               knexConfig = {
                 client: 'pg',
-                connection: {
-                  host: process.env['DB_HOST'] || 'localhost',
-                  port: parseInt(process.env['DB_PORT'] || '5432', 10),
-                  user: process.env['DB_USER'] || 'postgres',
-                  password: process.env['DB_PASSWORD'] || 'postgres',
-                  database: dbName,
-                },
+                connection: { host, port: parseInt(port, 10), user, password, database },
                 pool: { min: 2, max: 10 },
               };
             }

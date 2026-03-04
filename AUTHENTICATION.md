@@ -837,7 +837,7 @@ import { AuthModule, RealtimeModule } from '@cargoez/infrastructure';
 
 @Module({
   imports: [
-    DatabaseModule.forRoot({ databaseEnvKey: 'USER_SERVICE_DB' }),
+    DatabaseModule.forRoot({ connectionPrefix: 'USER_SERVICE' }),
     AuthModule,      // ← Global JWT + Roles guards
     RealtimeModule,
   ],

@@ -97,15 +97,25 @@ cp .env.example .env
 Edit `.env` with your actual values:
 
 ```env
-# Database (shared connection settings)
+# Default database connection (used when per-service vars are not set)
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD="your_password_here"
 
-# Per-service database names
-USER_SERVICE_DB=user_service_db
-SHARED_DB_SERVICE_DB=master_db
+# User Service database (prefix: USER_SERVICE)
+USER_SERVICE_DB_NAME=user_service_db
+# USER_SERVICE_DB_HOST=some-other-host     # uncomment to override defaults
+# USER_SERVICE_DB_PORT=5432
+# USER_SERVICE_DB_USER=user_svc_user
+# USER_SERVICE_DB_PASSWORD="secret"
+
+# Shared DB Example database (prefix: SHARED_DB)
+SHARED_DB_DB_NAME=master_db
+# SHARED_DB_DB_HOST=shared-instance.rds.amazonaws.com
+# SHARED_DB_DB_PORT=5432
+# SHARED_DB_DB_USER=shared_user
+# SHARED_DB_DB_PASSWORD="secret"
 
 # Keycloak
 KEYCLOAK_URL=http://localhost:8080
@@ -118,6 +128,8 @@ API_PORTAL_PORT=4000
 ```
 
 > **Note:** If your password contains special characters (e.g., `#`, `$`), wrap it in double quotes.
+>
+> Each service reads `{PREFIX}_DB_HOST`, `{PREFIX}_DB_PORT`, etc. If not set, it falls back to the shared `DB_*` values. This allows services to use completely different database servers when needed.
 
 ### Step 4 — Run database migrations
 
@@ -418,7 +430,7 @@ async function bootstrap() {
 // app.module.ts
 @Module({
   imports: [
-    DatabaseModule.forRoot({ databaseEnvKey: 'MY_SERVICE_DB' }),
+    DatabaseModule.forRoot({ connectionPrefix: 'MY_SERVICE' }),
     AuthModule,
     RealtimeModule,
     MyFeatureModule,
@@ -431,7 +443,7 @@ export class AppModule {}
 
 | Module | What it does |
 |---|---|
-| `DatabaseModule.forRoot()` | Knex connection pool, injected via `@InjectKnex()`. Accepts `databaseEnvKey` for per-service DB names. |
+| `DatabaseModule.forRoot()` | Knex connection pool, injected via `@InjectKnex()`. Accepts `connectionPrefix` for per-service DB connections (host, port, user, password, database). |
 | `AuthModule` | Global `JwtAuthGuard` (Keycloak JWKS) + `RolesGuard`. Use `@Public()` to skip auth, `@Roles('admin')` for role checks. |
 | `RealtimeModule` | Socket.IO WebSocket gateway with JWT-authenticated connections. Auto-broadcasts domain events. |
 | `ContextInterceptor` | AsyncLocalStorage-based `RequestContext` (`userId`, `userEmail`, `roles`, `tenantId`, `requestId`). |

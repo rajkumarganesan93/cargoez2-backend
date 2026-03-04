@@ -343,7 +343,7 @@ import { HealthController } from './presentation/controllers/health.controller';
 
 @Module({
   imports: [
-    DatabaseModule.forRoot({ databaseEnvKey: 'MY_SERVICE_DB' }),
+    DatabaseModule.forRoot({ connectionPrefix: 'MY_SERVICE' }),
     AuthModule,
     RealtimeModule,
     ItemsModule,
@@ -372,8 +372,13 @@ Add to `SERVICES` array in `apps/api-portal/src/main.ts`:
 In `.env`:
 
 ```env
-MY_SERVICE_DB=my_service_db
+MY_SERVICE_DB_NAME=my_service_db
 MY_SERVICE_PORT=3002
+# Uncomment to use a different database server:
+# MY_SERVICE_DB_HOST=other-host.rds.amazonaws.com
+# MY_SERVICE_DB_PORT=5432
+# MY_SERVICE_DB_USER=my_svc_user
+# MY_SERVICE_DB_PASSWORD="secret"
 ```
 
 ### Step 8 — Add scripts to root `package.json`
@@ -400,22 +405,42 @@ To add a new entity (e.g., `Product`) to an existing service:
 
 ## Database & Migrations
 
-### Per-Service Databases
+### Per-Service Database Connections
 
-Each microservice connects to its own PostgreSQL database:
+Each microservice can use its own database — and optionally its own database server. The `connectionPrefix` option controls which environment variables are read:
 
-| Service | Env Key | Default DB |
-|---|---|---|
-| `user-service` | `USER_SERVICE_DB` | `user_service_db` |
-| `shared-db-example` | `SHARED_DB_SERVICE_DB` | `master_db` |
+| Service | Prefix | Env Vars | Default DB |
+|---|---|---|---|
+| `user-service` | `USER_SERVICE` | `USER_SERVICE_DB_HOST`, `USER_SERVICE_DB_PORT`, `USER_SERVICE_DB_USER`, `USER_SERVICE_DB_PASSWORD`, `USER_SERVICE_DB_NAME` | `user_service_db` |
+| `shared-db-example` | `SHARED_DB` | `SHARED_DB_DB_HOST`, `SHARED_DB_DB_PORT`, `SHARED_DB_DB_USER`, `SHARED_DB_DB_PASSWORD`, `SHARED_DB_DB_NAME` | `master_db` |
 
-Connection credentials (`DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`) are shared across services.
+Each `{PREFIX}_DB_*` variable falls back to the shared `DB_*` default if not set. This means:
+- **Same server, different databases** — just set `{PREFIX}_DB_NAME`
+- **Completely different servers** — set all `{PREFIX}_DB_*` vars
 
 ### DatabaseModule
 
 ```typescript
-// Reads DB_PASSWORD, etc. at runtime (not import time)
-DatabaseModule.forRoot({ databaseEnvKey: 'USER_SERVICE_DB' })
+// Per-service connection: reads USER_SERVICE_DB_* env vars, falls back to DB_*
+DatabaseModule.forRoot({ connectionPrefix: 'USER_SERVICE' })
+```
+
+```env
+# .env — shared defaults
+DB_HOST=localhost
+DB_PORT=5432
+DB_USER=postgres
+DB_PASSWORD="password"
+
+# User Service — only overrides DB name (uses shared host/port/user/password)
+USER_SERVICE_DB_NAME=user_service_db
+
+# Shared DB — uses a completely different server
+SHARED_DB_DB_HOST=shared-instance.rds.amazonaws.com
+SHARED_DB_DB_PORT=5433
+SHARED_DB_DB_USER=shared_user
+SHARED_DB_DB_PASSWORD="different_password"
+SHARED_DB_DB_NAME=master_db
 ```
 
 The `useFactory` callback defers `process.env` reads to NestJS DI resolution time, ensuring `dotenv.config()` has already run.
@@ -691,7 +716,7 @@ This is required because Node.js doesn't natively understand TypeScript path ali
 - Import database-specific code in the domain layer
 - Put business logic in controllers (use cases only)
 - Skip the `ApiResponse` envelope (always use `createSuccessResponse`)
-- Hardcode database names (use `databaseEnvKey` in `DatabaseModule.forRoot()`)
+- Hardcode database connection details (use `connectionPrefix` in `DatabaseModule.forRoot()`)
 
 ---
 
