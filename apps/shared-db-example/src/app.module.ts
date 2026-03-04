@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from '@cargoez/shared';
 import { AuthModule, RealtimeModule } from '@cargoez/infrastructure';
-import { CountriesModule } from './countries/countries.module';
-import { HealthController } from './health.controller';
+import { CountriesModule } from './presentation/countries.module';
+import { HealthController } from './presentation/controllers/health.controller';
 
 @Module({
   imports: [

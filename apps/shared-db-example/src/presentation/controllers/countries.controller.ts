@@ -13,15 +13,25 @@ import {
 import { ApiBearerAuth, ApiTags, ApiQuery } from '@nestjs/swagger';
 import { createSuccessResponse, MessageCode } from '@cargoez/api';
 import { Roles } from '@cargoez/infrastructure';
-import { CountriesService } from './countries.service';
-import { CreateCountryDto } from './dto/create-country.dto';
-import { UpdateCountryDto } from './dto/update-country.dto';
+import { GetAllCountriesUseCase } from '../../application/use-cases/get-all-countries.use-case';
+import { GetCountryByIdUseCase } from '../../application/use-cases/get-country-by-id.use-case';
+import { CreateCountryUseCase } from '../../application/use-cases/create-country.use-case';
+import { UpdateCountryUseCase } from '../../application/use-cases/update-country.use-case';
+import { DeleteCountryUseCase } from '../../application/use-cases/delete-country.use-case';
+import { CreateCountryDto } from '../dto/create-country.dto';
+import { UpdateCountryDto } from '../dto/update-country.dto';
 
 @ApiTags('Countries')
 @ApiBearerAuth()
 @Controller('countries')
 export class CountriesController {
-  constructor(private readonly countriesService: CountriesService) {}
+  constructor(
+    private readonly getAllCountries: GetAllCountriesUseCase,
+    private readonly getCountryById: GetCountryByIdUseCase,
+    private readonly createCountry: CreateCountryUseCase,
+    private readonly updateCountry: UpdateCountryUseCase,
+    private readonly deleteCountry: DeleteCountryUseCase,
+  ) {}
 
   @Get()
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
@@ -36,7 +46,7 @@ export class CountriesController {
     @Query('sortOrder', new DefaultValuePipe('desc')) sortOrder: 'asc' | 'desc',
     @Query('search') search?: string,
   ) {
-    const result = await this.countriesService.findAll({
+    const result = await this.getAllCountries.execute({
       page,
       limit,
       sortBy,
@@ -49,28 +59,28 @@ export class CountriesController {
 
   @Get(':id')
   async findById(@Param('id') id: string) {
-    const country = await this.countriesService.findById(id);
+    const country = await this.getCountryById.execute(id);
     return createSuccessResponse(MessageCode.FETCHED, country);
   }
 
   @Post()
   @Roles('admin')
   async create(@Body() dto: CreateCountryDto) {
-    const country = await this.countriesService.create(dto);
+    const country = await this.createCountry.execute(dto);
     return createSuccessResponse(MessageCode.CREATED, country);
   }
 
   @Put(':id')
   @Roles('admin')
   async update(@Param('id') id: string, @Body() dto: UpdateCountryDto) {
-    const country = await this.countriesService.update(id, dto);
+    const country = await this.updateCountry.execute(id, dto);
     return createSuccessResponse(MessageCode.UPDATED, country);
   }
 
   @Delete(':id')
   @Roles('admin')
-  async delete(@Param('id') id: string) {
-    await this.countriesService.delete(id);
+  async remove(@Param('id') id: string) {
+    await this.deleteCountry.execute(id);
     return createSuccessResponse(MessageCode.DELETED, null);
   }
 }

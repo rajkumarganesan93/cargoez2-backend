@@ -3,7 +3,7 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { join } from 'path';
 import { config } from 'dotenv';
-import { AppModule } from './app/app.module';
+import { AppModule } from './app.module';
 import { GlobalExceptionFilter, PinoLoggerService, ContextInterceptor } from '@cargoez/infrastructure';
 
 config({ path: join(process.cwd(), '.env') });

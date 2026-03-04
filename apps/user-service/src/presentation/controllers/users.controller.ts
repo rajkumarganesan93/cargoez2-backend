@@ -13,15 +13,25 @@ import {
 import { ApiBearerAuth, ApiTags, ApiQuery } from '@nestjs/swagger';
 import { createSuccessResponse, MessageCode } from '@cargoez/api';
 import { Roles, getContext } from '@cargoez/infrastructure';
-import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { GetAllUsersUseCase } from '../../application/use-cases/get-all-users.use-case';
+import { GetUserByIdUseCase } from '../../application/use-cases/get-user-by-id.use-case';
+import { CreateUserUseCase } from '../../application/use-cases/create-user.use-case';
+import { UpdateUserUseCase } from '../../application/use-cases/update-user.use-case';
+import { DeleteUserUseCase } from '../../application/use-cases/delete-user.use-case';
+import { CreateUserDto } from '../dto/create-user.dto';
+import { UpdateUserDto } from '../dto/update-user.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth()
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly getAllUsers: GetAllUsersUseCase,
+    private readonly getUserById: GetUserByIdUseCase,
+    private readonly createUser: CreateUserUseCase,
+    private readonly updateUser: UpdateUserUseCase,
+    private readonly deleteUser: DeleteUserUseCase,
+  ) {}
 
   @Get()
   @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
@@ -36,7 +46,7 @@ export class UsersController {
     @Query('sortOrder', new DefaultValuePipe('desc')) sortOrder: 'asc' | 'desc',
     @Query('search') search?: string,
   ) {
-    const result = await this.usersService.findAll({
+    const result = await this.getAllUsers.execute({
       page,
       limit,
       sortBy,
@@ -55,28 +65,28 @@ export class UsersController {
 
   @Get(':id')
   async findById(@Param('id') id: string) {
-    const user = await this.usersService.findById(id);
+    const user = await this.getUserById.execute(id);
     return createSuccessResponse(MessageCode.FETCHED, user);
   }
 
   @Post()
   @Roles('admin')
   async create(@Body() dto: CreateUserDto) {
-    const user = await this.usersService.create(dto);
+    const user = await this.createUser.execute(dto);
     return createSuccessResponse(MessageCode.CREATED, user);
   }
 
   @Put(':id')
   @Roles('admin')
   async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
-    const user = await this.usersService.update(id, dto);
+    const user = await this.updateUser.execute(id, dto);
     return createSuccessResponse(MessageCode.UPDATED, user);
   }
 
   @Delete(':id')
   @Roles('admin')
-  async delete(@Param('id') id: string) {
-    await this.usersService.delete(id);
+  async remove(@Param('id') id: string) {
+    await this.deleteUser.execute(id);
     return createSuccessResponse(MessageCode.DELETED, null);
   }
 }

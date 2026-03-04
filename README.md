@@ -342,22 +342,50 @@ socket.on('data-changed', (event) => { /* refresh data */ });
 
 ---
 
-## NestJS Architecture (per service)
+## Clean Architecture (per service)
+
+Each service follows strict Clean Architecture with 4 layers. Dependencies point inward — domain has zero framework imports.
 
 ```
 src/
-├── main.ts                     # Bootstrap: NestFactory, Swagger, global pipes/filters
-└── app/
-    ├── app.module.ts            # Root module (imports DB, Auth, Realtime, feature modules)
-    ├── health.controller.ts     # Health check endpoint
-    └── <feature>/
-        ├── <feature>.module.ts       # Feature module
-        ├── <feature>.controller.ts   # HTTP handlers (decorators for Swagger, roles)
-        ├── <feature>.service.ts      # Business logic
-        ├── <feature>.repository.ts   # extends BaseRepository
-        ├── entities/                 # TypeScript interfaces extending BaseEntity
-        └── dto/                      # class-validator DTOs (CreateDto, UpdateDto)
+├── main.ts                              # Bootstrap: NestFactory, Swagger, global pipes/filters
+├── app.module.ts                        # Root module (imports DB, Auth, Realtime, feature modules)
+│
+├── domain/                              # Pure TypeScript — NO NestJS, NO framework deps
+│   ├── entities/
+│   │   └── user.entity.ts               # Interface extending BaseEntity
+│   └── repositories/
+│       └── user-repository.interface.ts  # IUserRepository + DI token
+│
+├── application/                         # Use cases — orchestrate business logic
+│   └── use-cases/
+│       ├── create-user.use-case.ts       # @Injectable, injects IUserRepository via token
+│       ├── get-all-users.use-case.ts
+│       ├── get-user-by-id.use-case.ts
+│       ├── update-user.use-case.ts
+│       └── delete-user.use-case.ts
+│
+├── infrastructure/                      # Implementations — Knex, external services
+│   └── repositories/
+│       └── user.repository.ts            # extends BaseRepository, implements IUserRepository
+│
+└── presentation/                        # NestJS controllers, DTOs, module wiring
+    ├── controllers/
+    │   ├── users.controller.ts           # Injects use cases, not repositories
+    │   └── health.controller.ts
+    ├── dto/
+    │   ├── create-user.dto.ts            # class-validator + Swagger decorators
+    │   └── update-user.dto.ts
+    └── users.module.ts                   # Binds IUserRepository → UserRepository via DI
 ```
+
+**Data flow:** Route → Guard (auth) → Controller → Use Case → Repository Interface → Repository Implementation → Database
+
+**DI wiring (in `users.module.ts`):**
+```typescript
+{ provide: USER_REPOSITORY, useClass: UserRepository }
+```
+This lets use cases depend on the domain interface, while NestJS injects the infrastructure implementation.
 
 ---
 
