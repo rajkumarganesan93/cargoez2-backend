@@ -1,6 +1,6 @@
 # CargoEz Backend
 
-Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreSQL, Clean Architecture, and Keycloak authentication.
+Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreSQL, **Clean Architecture**, and **Keycloak** authentication.
 
 ## Tech Stack
 
@@ -11,13 +11,13 @@ Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreS
 | **NestJS 11** | Application framework |
 | **Nx 22** | Monorepo build system (caching, affected commands, dependency graph) |
 | **pnpm 10** | Fast, disk-efficient package manager |
-| PostgreSQL 16 | Database |
-| Knex.js | Query builder & migrations |
+| PostgreSQL 16+ | Database |
+| Knex.js | SQL query builder |
 | Keycloak 26.x | Identity & access management (OAuth 2.0 / OIDC) |
-| class-validator / class-transformer | Request validation (DTO decorators) |
-| Pino | Structured logging |
+| class-validator / class-transformer | DTO validation (decorator-based) |
+| Pino | Structured JSON logging |
 | Socket.IO | Real-time data sync (WebSocket) |
-| Swagger UI (@nestjs/swagger) | API documentation |
+| Swagger UI (`@nestjs/swagger`) | Interactive API documentation |
 
 ---
 
@@ -25,26 +25,39 @@ Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreS
 
 ```
 BACKEND/
-├── apps/                               # NestJS applications
-│   ├── user-service/                   # User CRUD (port 3001)
-│   ├── shared-db-example/              # Country CRUD (port 3005)
-│   └── api-portal/                     # Combined Swagger UI (port 4000)
-├── libs/                               # Shared libraries (@cargoez/*)
-│   ├── domain/                         # Core types: BaseEntity, IRepository, pagination
-│   ├── api/                            # MessageCode, MessageCatalog, ApiResponse, exceptions
-│   ├── shared/                         # DatabaseModule (Knex), InjectKnex decorator
-│   └── infrastructure/                 # Auth guards, request context, BaseRepository,
-│                                       #   realtime gateway, logger, exception filter
+├── apps/                                # Independently deployable NestJS services
+│   ├── user-service/                    # User management CRUD (port 3001)
+│   │   └── src/
+│   │       ├── domain/                  # Pure interfaces (entities, repository contracts)
+│   │       ├── application/             # Use cases (business logic)
+│   │       ├── infrastructure/          # Concrete implementations (Knex repositories)
+│   │       ├── presentation/            # Controllers, DTOs, NestJS module wiring
+│   │       ├── app.module.ts            # Root module
+│   │       └── main.ts                  # Bootstrap
+│   ├── shared-db-example/               # Country management CRUD (port 3005)
+│   │   └── src/                         # Same Clean Architecture layers as above
+│   └── api-portal/                      # Swagger UI aggregator + reverse proxy (port 4000)
+│
+├── libs/                                # Shared libraries (imported as @cargoez/*)
+│   ├── domain/                          # BaseEntity, IBaseRepository, PaginationOptions
+│   ├── api/                             # MessageCode, MessageCatalog, ApiResponse, exceptions
+│   ├── shared/                          # DatabaseModule (Knex provider), @InjectKnex()
+│   └── infrastructure/                  # Auth guards, request context, BaseRepository,
+│                                        #   realtime gateway, logger, exception filter
+│
 ├── keycloak/
-│   └── cargoez-realm.json              # Keycloak realm config (clients, users, roles)
-├── register-paths.js                   # Runtime module resolution for @cargoez/* libs
-├── nx.json                             # Nx workspace configuration
-├── pnpm-workspace.yaml                 # pnpm workspace packages
-├── tsconfig.base.json                  # Shared TypeScript config with path aliases
-├── .env.example                        # Environment variable template
-├── DEVELOPMENT.md                      # Full development guide & coding conventions
-├── AUTHENTICATION.md                   # Keycloak setup, OAuth/PKCE, token management
-└── ARCHITECTURE-COMPARISON.md          # Express vs NestJS migration analysis
+│   └── cargoez-realm.json               # Keycloak realm config (clients, users, roles)
+├── register-paths.js                    # Runtime module resolution for @cargoez/* libs
+├── nx.json                              # Nx workspace configuration
+├── pnpm-workspace.yaml                  # pnpm workspace definition
+├── tsconfig.base.json                   # Shared TypeScript config with path aliases
+├── .env.example                         # Environment variable template
+│
+├── PACKAGES.md                          # Shared libraries reference & exports
+├── DEVELOPMENT.md                       # Full development guide & coding conventions
+├── AUTHENTICATION.md                    # Keycloak setup, OAuth/PKCE, token management
+├── ERROR_CODES.md                       # Message codes & error response reference
+└── ARCHITECTURE-COMPARISON.md           # Express → NestJS migration analysis
 ```
 
 ---
@@ -58,7 +71,7 @@ BACKEND/
 | Node.js | >= 18.7.0 | `node -v` |
 | pnpm | >= 9 | `pnpm -v` (install: `npm i -g pnpm`) |
 | PostgreSQL | 16+ | Running on `localhost:5432` |
-| Keycloak | 26.x | For API authentication |
+| Keycloak | 26.x | Running on `localhost:8080` |
 
 ### Step 1 — Install dependencies
 
@@ -66,47 +79,51 @@ BACKEND/
 pnpm install
 ```
 
-### Step 2 — Create database
+### Step 2 — Create databases
 
-Connect to PostgreSQL and create the database:
+Each microservice uses its own database. Connect to PostgreSQL and create them:
 
 ```sql
-CREATE DATABASE cargoez;
+CREATE DATABASE user_service_db;
+CREATE DATABASE master_db;
 ```
 
-Both services share a single database by default. Override with `DB_NAME` in `.env`.
-
 ### Step 3 — Configure environment
-
-Copy the example and edit as needed:
 
 ```bash
 cp .env.example .env
 ```
 
+Edit `.env` with your actual values:
+
 ```env
-# Database
+# Database (shared connection settings)
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
-DB_PASSWORD=postgres
-DB_NAME=cargoez
+DB_PASSWORD="your_password_here"
+
+# Per-service database names
+USER_SERVICE_DB=user_service_db
+SHARED_DB_SERVICE_DB=master_db
 
 # Keycloak
 KEYCLOAK_URL=http://localhost:8080
 KEYCLOAK_REALM=cargoez
 
-# Services (optional overrides)
+# Services (optional port overrides)
 USER_SERVICE_PORT=3001
 SHARED_DB_SERVICE_PORT=3005
 API_PORTAL_PORT=4000
 ```
 
+> **Note:** If your password contains special characters (e.g., `#`, `$`), wrap it in double quotes.
+
 ### Step 4 — Run database migrations
 
 ```bash
-pnpm migrate:user
-pnpm migrate:shared
+pnpm migrate:user      # Creates tables in user_service_db
+pnpm migrate:shared    # Creates tables in master_db
 ```
 
 ### Step 5 — Build everything
@@ -115,7 +132,7 @@ pnpm migrate:shared
 pnpm build
 ```
 
-This builds all 4 libraries and 3 applications using Nx's dependency-aware task runner with caching.
+Nx builds all 4 libraries and 3 applications in dependency order with intelligent caching.
 
 ### Step 6 — Start Keycloak
 
@@ -138,25 +155,28 @@ docker run -d --name keycloak \
   quay.io/keycloak/keycloak:26.1.0 start-dev --import-realm
 ```
 
-| Credential | Username | Password | Purpose |
+**Pre-configured users:**
+
+| Username | Password | Roles | Purpose |
 |---|---|---|---|
-| Admin Console | `admin` | `admin` | Keycloak admin UI at `/admin` |
-| API User (admin) | `admin` | `admin123` | For API token acquisition |
-| API User (user) | `testuser` | `test123` | For API token acquisition |
-| API User (manager) | `manager` | `manager123` | For API token acquisition |
+| `admin` | `admin123` | `admin`, `user` | Full access to all APIs |
+| `testuser` | `test123` | `user` | Read-only access |
+| `manager` | `manager123` | `manager`, `user` | Mid-level access |
+
+**Keycloak Admin Console:** http://localhost:8080/admin (login: `admin` / `admin`)
 
 ### Step 7 — Start all services
 
 ```bash
-# Option A: Using Nx (recommended)
+# All at once (using Nx)
 pnpm start:all
 
-# Option B: Individual services
-pnpm start:user     # User Service on :3001
-pnpm start:shared   # Shared DB Example on :3005
-pnpm start:portal   # API Portal on :4000
+# Or individually
+pnpm start:user       # User Service on :3001
+pnpm start:shared     # Shared DB Example on :3005
+pnpm start:portal     # API Portal on :4000
 
-# Option C: Direct node (after build)
+# Or direct node (after build)
 pnpm dev:user
 pnpm dev:shared
 pnpm dev:portal
@@ -166,18 +186,115 @@ pnpm dev:portal
 
 | Service | URL | Description |
 |---|---|---|
+| **API Portal** | **http://localhost:4000/api-docs** | **Swagger UI with service selector dropdown** |
+| User Service — Swagger | http://localhost:3001/user-service/api-docs | User Service API docs |
 | User Service — Health | http://localhost:3001/user-service/health | Health check |
-| User Service — Swagger | http://localhost:3001/user-service/api-docs | API docs |
+| Shared DB — Swagger | http://localhost:3005/shared-db-example/api-docs | Shared DB Example API docs |
 | Shared DB — Health | http://localhost:3005/shared-db-example/health | Health check |
-| Shared DB — Swagger | http://localhost:3005/shared-db-example/api-docs | API docs |
-| **API Portal** | **http://localhost:4000/api-docs** | **Combined Swagger UI** |
 | Keycloak | http://localhost:8080 | Identity provider |
 
 ---
 
-## API Portal
+## Microservices
 
-The API Portal at `http://localhost:4000/api-docs` provides a single Swagger UI aggregating all microservices. It fetches OpenAPI specs from each running service and auto-refreshes every 30 seconds.
+| Service | Port | Database | Global Prefix | Description |
+|---|---|---|---|---|
+| `user-service` | 3001 | `user_service_db` | `/user-service` | User CRUD, `/users/me` |
+| `shared-db-example` | 3005 | `master_db` | `/shared-db-example` | Country CRUD |
+| `api-portal` | 4000 | — | — | Swagger aggregator + reverse proxy |
+
+Each service is a standalone NestJS application with its own database, Swagger docs, and WebSocket gateway. Services can be deployed and scaled independently.
+
+### API Portal
+
+The API Portal at `http://localhost:4000/api-docs` provides:
+
+- **Service selector dropdown** — pick which microservice's API to view
+- **Reverse proxy** — "Try it out" calls are proxied to the correct service
+- **Live specs** — each service's OpenAPI spec is fetched in real-time
+
+All API calls through the portal are transparently forwarded:
+- `http://localhost:4000/user-service/*` → `http://localhost:3001/user-service/*`
+- `http://localhost:4000/shared-db-example/*` → `http://localhost:3005/shared-db-example/*`
+
+---
+
+## Clean Architecture (per service)
+
+Every service follows strict **Clean Architecture** with 4 layers. Dependencies always point inward — the domain layer has zero framework imports.
+
+```
+src/
+├── domain/                              # Pure TypeScript — NO framework dependencies
+│   ├── entities/
+│   │   └── user.entity.ts               # Interface extending BaseEntity
+│   └── repositories/
+│       └── user-repository.interface.ts  # IUserRepository type + DI token constant
+│
+├── application/                         # Business logic — depends only on domain
+│   └── use-cases/
+│       ├── create-user.use-case.ts      # @Injectable, @Inject(USER_REPOSITORY)
+│       ├── get-all-users.use-case.ts
+│       ├── get-user-by-id.use-case.ts
+│       ├── update-user.use-case.ts
+│       └── delete-user.use-case.ts
+│
+├── infrastructure/                      # Concrete implementations
+│   └── repositories/
+│       └── user.repository.ts           # extends BaseRepository<User>, uses Knex
+│
+└── presentation/                        # HTTP layer + DI wiring
+    ├── controllers/
+    │   ├── users.controller.ts          # Injects use cases (not repositories)
+    │   └── health.controller.ts
+    ├── dto/
+    │   ├── create-user.dto.ts           # class-validator + @nestjs/swagger decorators
+    │   └── update-user.dto.ts
+    └── users.module.ts                  # Binds USER_REPOSITORY → UserRepository
+```
+
+**Dependency rule:** `Presentation → Application → Domain ← Infrastructure`
+
+**Data flow:** `HTTP Request → Auth Guard → Controller → Use Case → Repository Interface → Repository Impl → Database`
+
+**DI wiring (in `users.module.ts`):**
+
+```typescript
+@Module({
+  providers: [
+    { provide: USER_REPOSITORY, useClass: UserRepository },
+    CreateUserUseCase,
+    GetAllUsersUseCase,
+    // ...
+  ],
+  controllers: [UsersController],
+})
+export class UsersModule {}
+```
+
+Use cases depend on the `IUserRepository` domain interface. NestJS injects the `UserRepository` infrastructure implementation at runtime via the `USER_REPOSITORY` DI token.
+
+---
+
+## Shared Libraries
+
+| Library | Import Path | Purpose |
+|---|---|---|
+| `@cargoez/domain` | `libs/domain` | `BaseEntity`, `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
+| `@cargoez/api` | `libs/api` | `MessageCode`, `MessageCatalog`, `ApiResponse`, `AppException`, `NotFoundException`, `AlreadyExistsException`, `ValidationException` |
+| `@cargoez/shared` | `libs/shared` | `DatabaseModule.forRoot()`, `@InjectKnex()`, `KNEX_CONNECTION` |
+| `@cargoez/infrastructure` | `libs/infrastructure` | `JwtAuthGuard`, `RolesGuard`, `@Public()`, `@Roles()`, `AuthModule`, `RequestContext`, `ContextInterceptor`, `BaseRepository`, `RealtimeGateway`, `RealtimeModule`, `DomainEvent`, `domainEventBus`, `PinoLoggerService`, `GlobalExceptionFilter` |
+
+**Dependency graph:**
+
+```
+domain          (no dependencies — pure interfaces)
+api             (no dependencies — pure enums/functions)
+shared          (no dependencies — NestJS module only)
+infrastructure  → domain, api, shared
+```
+
+> See [PACKAGES.md](PACKAGES.md) for the complete export reference.
 
 ---
 
@@ -196,22 +313,22 @@ curl -X POST http://localhost:8080/realms/cargoez/protocol/openid-connect/token 
 ### Using the Token
 
 ```bash
-curl http://localhost:3001/user-service/users \
-  -H "Authorization: Bearer <your_token>"
+curl http://localhost:4000/user-service/users \
+  -H "Authorization: Bearer <access_token>"
 ```
 
-In Swagger UI, click **Authorize** and paste: `Bearer <your_token>`
+In Swagger UI, click **Authorize** and paste: `Bearer <access_token>`
 
 ### Role-Based Access Control
 
-Routes are protected by Keycloak realm roles via the `@Roles()` decorator:
+Routes are protected via the `@Roles()` decorator:
 
-| Operation | Required Role | Example |
-|---|---|---|
-| Read (GET) | Any authenticated user | `GET /user-service/users` |
-| Create (POST) | `admin` | `POST /user-service/users` |
-| Update (PUT) | `admin` | `PUT /user-service/users/:id` |
-| Delete (DELETE) | `admin` | `DELETE /user-service/users/:id` |
+| Operation | Required Role |
+|---|---|
+| `GET` (list, get by ID, `/me`) | Any authenticated user |
+| `POST` (create) | `admin` |
+| `PUT` (update) | `admin` |
+| `DELETE` (delete) | `admin` |
 
 ### Keycloak Clients
 
@@ -222,63 +339,25 @@ Routes are protected by Keycloak realm roles via the `@Roles()` decorator:
 | `cargoez-mobile` | Auth Code + PKCE | Mobile apps |
 | `cargoez-service` | Client Credentials | Service-to-service |
 
-> See [AUTHENTICATION.md](AUTHENTICATION.md) for the full guide.
-
----
-
-## Shared Libraries
-
-| Library | Scope | Purpose |
-|---|---|---|
-| `@cargoez/domain` | `libs/domain` | `BaseEntity`, `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
-| `@cargoez/api` | `libs/api` | `MessageCode`, `MessageCatalog`, `ApiResponse`, `AppException`, `NotFoundException`, `ValidationException` |
-| `@cargoez/shared` | `libs/shared` | `DatabaseModule` (Knex provider), `@InjectKnex()` decorator |
-| `@cargoez/infrastructure` | `libs/infrastructure` | `JwtAuthGuard`, `RolesGuard`, `@Public()`, `@Roles()`, `RequestContext`, `ContextInterceptor`, `BaseRepository`, `RealtimeGateway`, `PinoLoggerService`, `GlobalExceptionFilter` |
-
-### Dependency Graph
-
-```
-domain  (no dependencies)
-api     (no dependencies)
-shared  (no dependencies)
-infrastructure → domain, api, shared
-```
-
----
-
-## How Services Are Built
-
-Each NestJS service follows a consistent pattern:
-
-```typescript
-// main.ts — Bootstrap
-const app = await NestFactory.create(AppModule);
-app.setGlobalPrefix('my-service');
-app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-app.useGlobalFilters(new GlobalExceptionFilter());
-app.useGlobalInterceptors(new ContextInterceptor());
-```
-
-```typescript
-// app.module.ts — Module composition
-@Module({
-  imports: [DatabaseModule.forRoot(), AuthModule, RealtimeModule, MyFeatureModule],
-})
-export class AppModule {}
-```
-
-Features wired automatically via shared modules:
-
-- **AuthModule** — Global JWT auth guard + roles guard (use `@Public()` to skip auth)
-- **RealtimeModule** — Socket.IO gateway with JWT-authenticated WebSocket connections
-- **DatabaseModule** — Knex connection pool, injected via `@InjectKnex()`
-- **ContextInterceptor** — AsyncLocalStorage-based request context (`userId`, `tenantId`, `requestId`)
-- **GlobalExceptionFilter** — Consistent error responses using MessageCatalog
-- **BaseRepository** — Generic CRUD with auto audit fields and domain event emission
+> See [AUTHENTICATION.md](AUTHENTICATION.md) for the full guide including PKCE flows, token anatomy, and frontend/mobile integration.
 
 ---
 
 ## API Response Format
+
+**Every** response (success or error) uses a consistent envelope:
+
+```typescript
+interface ApiResponse<T = any> {
+  success: boolean;
+  messageCode: string;
+  message: string;
+  data?: T;
+  errors?: any[];
+}
+```
+
+**Success example:**
 
 ```json
 {
@@ -286,11 +365,15 @@ Features wired automatically via shared modules:
   "messageCode": "LIST_FETCHED",
   "message": "Resources fetched successfully",
   "data": {
-    "data": [...],
-    "pagination": { "page": 1, "limit": 10, "total": 50, "totalPages": 5 }
+    "data": [
+      { "id": "uuid", "name": "John Doe", "email": "john@example.com", ... }
+    ],
+    "pagination": { "page": 1, "limit": 10, "total": 42, "totalPages": 5 }
   }
 }
 ```
+
+**Error example:**
 
 ```json
 {
@@ -301,23 +384,103 @@ Features wired automatically via shared modules:
 }
 ```
 
+> See [ERROR_CODES.md](ERROR_CODES.md) for the complete message code reference.
+
+---
+
+## How Services Are Built
+
+Each NestJS service follows a consistent bootstrap pattern:
+
+```typescript
+// main.ts
+config({ path: join(process.cwd(), '.env') });
+
+async function bootstrap() {
+  const app = await NestFactory.create(AppModule);
+  app.setGlobalPrefix('my-service');
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
+  app.useGlobalFilters(new GlobalExceptionFilter());
+  app.useGlobalInterceptors(new ContextInterceptor());
+
+  // Swagger setup with server URL for portal compatibility
+  const swaggerConfig = new DocumentBuilder()
+    .setTitle('My Service')
+    .addServer(`http://localhost:${port}`, 'Direct')
+    .addBearerAuth()
+    .build();
+
+  await app.listen(port);
+}
+```
+
+```typescript
+// app.module.ts
+@Module({
+  imports: [
+    DatabaseModule.forRoot({ databaseEnvKey: 'MY_SERVICE_DB' }),
+    AuthModule,
+    RealtimeModule,
+    MyFeatureModule,
+  ],
+})
+export class AppModule {}
+```
+
+**What each shared module provides:**
+
+| Module | What it does |
+|---|---|
+| `DatabaseModule.forRoot()` | Knex connection pool, injected via `@InjectKnex()`. Accepts `databaseEnvKey` for per-service DB names. |
+| `AuthModule` | Global `JwtAuthGuard` (Keycloak JWKS) + `RolesGuard`. Use `@Public()` to skip auth, `@Roles('admin')` for role checks. |
+| `RealtimeModule` | Socket.IO WebSocket gateway with JWT-authenticated connections. Auto-broadcasts domain events. |
+| `ContextInterceptor` | AsyncLocalStorage-based `RequestContext` (`userId`, `userEmail`, `roles`, `tenantId`, `requestId`). |
+| `GlobalExceptionFilter` | Catches all exceptions and returns consistent `ApiResponse` error format via `MessageCatalog`. |
+| `BaseRepository` | Generic Knex CRUD with pagination, search, auto audit fields (`createdBy`, `modifiedBy`), and domain event emission. |
+
 ---
 
 ## Real-Time Data Sync
 
-When `RealtimeModule` is imported, Socket.IO is attached to the HTTP server. `BaseRepository` automatically emits domain events on data mutations (create, update, delete), which are broadcast to subscribed WebSocket clients.
+When `RealtimeModule` is imported, Socket.IO is attached to the service's HTTP server. `BaseRepository` automatically emits domain events on create/update/delete, which are broadcast to subscribed WebSocket clients.
 
-**Frontend integration:**
+### Frontend Integration
+
 ```typescript
-const socket = io('http://localhost:3001', { auth: { token: 'jwt...' } });
+import { io } from 'socket.io-client';
+
+const socket = io('http://localhost:3001', {
+  auth: { token: '<access_token>' },
+});
+
+// Subscribe to all user changes
 socket.emit('subscribe', { room: 'entity:users' });
-socket.on('data-changed', (event) => { /* refresh data */ });
+
+// Listen for real-time updates
+socket.on('data-changed', (event) => {
+  console.log(event);
+  // {
+  //   entity: "users",
+  //   action: "created" | "updated" | "deleted",
+  //   entityId: "uuid",
+  //   data: { ... },
+  //   actor: "user-id",
+  //   tenantId: "tenant-id",
+  //   timestamp: "2026-03-04T..."
+  // }
+});
+
+// Unsubscribe
+socket.emit('unsubscribe', { room: 'entity:users' });
 ```
 
-**Room strategy:**
-- `entity:<table>` — all changes for a table
-- `entity:<table>:<id>` — changes for a specific record
-- `tenant:<tenantId>` — all changes for a tenant
+### Room Patterns
+
+| Room | Receives |
+|---|---|
+| `entity:<table>` | All changes for a table (e.g., `entity:users`) |
+| `entity:<table>:<id>` | Changes to a specific record |
+| `tenant:<tenantId>` | All changes for a tenant |
 
 ---
 
@@ -325,15 +488,16 @@ socket.on('data-changed', (event) => { /* refresh data */ });
 
 | Command | Description |
 |---|---|
-| `pnpm build` | Build all libs and apps (Nx cached) |
+| `pnpm install` | Install all dependencies |
+| `pnpm build` | Build all libs and apps (Nx cached, dependency-aware) |
 | `pnpm build:affected` | Build only changed projects |
-| `pnpm start:all` | Start all services in parallel |
+| `pnpm start:all` | Start all services in parallel (via Nx) |
 | `pnpm start:user` | Start user-service |
 | `pnpm start:shared` | Start shared-db-example |
 | `pnpm start:portal` | Start API Portal |
-| `pnpm dev:user` | Run user-service (post-build) |
-| `pnpm dev:shared` | Run shared-db-example (post-build) |
-| `pnpm dev:portal` | Run API Portal (post-build) |
+| `pnpm dev:user` | Run user-service directly (after build) |
+| `pnpm dev:shared` | Run shared-db-example directly (after build) |
+| `pnpm dev:portal` | Run API Portal directly (after build) |
 | `pnpm migrate:user` | Run user-service DB migrations |
 | `pnpm migrate:shared` | Run shared-db-example DB migrations |
 | `pnpm test` | Run tests (Nx cached) |
@@ -342,60 +506,15 @@ socket.on('data-changed', (event) => { /* refresh data */ });
 
 ---
 
-## Clean Architecture (per service)
-
-Each service follows strict Clean Architecture with 4 layers. Dependencies point inward — domain has zero framework imports.
-
-```
-src/
-├── main.ts                              # Bootstrap: NestFactory, Swagger, global pipes/filters
-├── app.module.ts                        # Root module (imports DB, Auth, Realtime, feature modules)
-│
-├── domain/                              # Pure TypeScript — NO NestJS, NO framework deps
-│   ├── entities/
-│   │   └── user.entity.ts               # Interface extending BaseEntity
-│   └── repositories/
-│       └── user-repository.interface.ts  # IUserRepository + DI token
-│
-├── application/                         # Use cases — orchestrate business logic
-│   └── use-cases/
-│       ├── create-user.use-case.ts       # @Injectable, injects IUserRepository via token
-│       ├── get-all-users.use-case.ts
-│       ├── get-user-by-id.use-case.ts
-│       ├── update-user.use-case.ts
-│       └── delete-user.use-case.ts
-│
-├── infrastructure/                      # Implementations — Knex, external services
-│   └── repositories/
-│       └── user.repository.ts            # extends BaseRepository, implements IUserRepository
-│
-└── presentation/                        # NestJS controllers, DTOs, module wiring
-    ├── controllers/
-    │   ├── users.controller.ts           # Injects use cases, not repositories
-    │   └── health.controller.ts
-    ├── dto/
-    │   ├── create-user.dto.ts            # class-validator + Swagger decorators
-    │   └── update-user.dto.ts
-    └── users.module.ts                   # Binds IUserRepository → UserRepository via DI
-```
-
-**Data flow:** Route → Guard (auth) → Controller → Use Case → Repository Interface → Repository Implementation → Database
-
-**DI wiring (in `users.module.ts`):**
-```typescript
-{ provide: USER_REPOSITORY, useClass: UserRepository }
-```
-This lets use cases depend on the domain interface, while NestJS injects the infrastructure implementation.
-
----
-
 ## Documentation
 
 | Document | Description |
 |---|---|
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Full development guide & coding conventions |
-| [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, OAuth 2.0 flows, token management |
-| [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md) | Express vs NestJS migration analysis |
+| [PACKAGES.md](PACKAGES.md) | Shared libraries — all exports, usage examples, dependency graph |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Development guide — Clean Architecture, adding new services, coding conventions |
+| [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, OAuth 2.0 flows (ROPC, PKCE, Client Credentials), token management |
+| [ERROR_CODES.md](ERROR_CODES.md) | Message codes, HTTP statuses, error response examples |
+| [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md) | Express → NestJS migration analysis & decision record |
 
 ---
 

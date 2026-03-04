@@ -1,56 +1,88 @@
 # Error & Message Codes Reference
 
 All API responses include a `messageCode` field that indicates the outcome.
-Codes are defined in `@rajkumarganesan93/api` → `MessageCode` enum and resolved via `MessageCatalog`.
+Codes are defined in `@cargoez/api` → `MessageCode` enum and resolved via `MessageCatalog`.
 
 ---
 
-## Success Codes
+## Unified Response Envelope
 
-| Code | HTTP Status | Message Template | When Used |
-|------|-------------|-----------------|-----------|
-| `CREATED` | 201 | `{resource} created successfully` | A new resource was created (POST) |
-| `UPDATED` | 200 | `{resource} updated successfully` | An existing resource was modified (PUT/PATCH) |
-| `DELETED` | 200 | `{resource} deleted successfully` | A resource was soft-deleted (DELETE) |
-| `FETCHED` | 200 | `{resource} fetched successfully` | A single resource was retrieved (GET /:id) |
-| `LIST_FETCHED` | 200 | `{resource} list fetched successfully` | A paginated list was retrieved (GET /) |
+Every response — success or error — follows this shape:
 
-### Example — Success Response
-
-```json
-{
-  "success": true,
-  "messageCode": "CREATED",
-  "message": "User created successfully",
-  "data": {
-    "id": "a1b2c3d4-...",
-    "name": "Alice",
-    "email": "alice@example.com",
-    "isActive": true,
-    "createdAt": "2026-02-19T10:00:00.000Z",
-    "modifiedAt": "2026-02-19T10:00:00.000Z"
-  },
-  "timestamp": "2026-02-19T10:00:00.123Z"
+```typescript
+interface ApiResponse<T = any> {
+  success: boolean;       // true for success, false for error
+  messageCode: string;    // MessageCode enum value
+  message: string;        // Human-readable message from MessageCatalog
+  data?: T;               // Present on success
+  errors?: any[];         // Present on error (validation details, etc.)
 }
 ```
 
 ---
 
-## Bad Request (400)
+## Success Codes
 
-| Code | HTTP Status | Message Template | When Used |
-|------|-------------|-----------------|-----------|
-| `BAD_REQUEST` | 400 | `Bad request: {reason}` | Request syntax is malformed (invalid JSON, wrong content-type) |
+| Code | HTTP Status | Message | When Used |
+|------|-------------|---------|-----------|
+| `SUCCESS` | 200 | Operation completed successfully | Generic success |
+| `CREATED` | 201 | Resource created successfully | `POST` — new resource created |
+| `UPDATED` | 200 | Resource updated successfully | `PUT` — existing resource modified |
+| `DELETED` | 200 | Resource deleted successfully | `DELETE` — resource removed |
+| `FETCHED` | 200 | Resource fetched successfully | `GET /:id` — single resource retrieved |
+| `LIST_FETCHED` | 200 | Resources fetched successfully | `GET /` — paginated list retrieved |
 
-### Example — Bad Request
+### Example — Success (Single Resource)
 
 ```json
 {
-  "success": false,
-  "messageCode": "BAD_REQUEST",
-  "error": "Bad request: Malformed JSON",
-  "statusCode": 400,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "success": true,
+  "messageCode": "CREATED",
+  "message": "Resource created successfully",
+  "data": {
+    "id": "d563b61c-7961-4431-8c7f-f57bbc010943",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "phone": "+1234567890",
+    "createdAt": "2026-03-04T08:44:32.110Z",
+    "modifiedAt": "2026-03-04T08:44:32.110Z",
+    "createdBy": "admin",
+    "modifiedBy": "admin",
+    "tenantId": null
+  }
+}
+```
+
+### Example — Success (Paginated List)
+
+```json
+{
+  "success": true,
+  "messageCode": "LIST_FETCHED",
+  "message": "Resources fetched successfully",
+  "data": {
+    "data": [
+      { "id": "uuid-1", "name": "Alice", "email": "alice@example.com", ... },
+      { "id": "uuid-2", "name": "Bob", "email": "bob@example.com", ... }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 42,
+      "totalPages": 5
+    }
+  }
+}
+```
+
+### Example — Delete
+
+```json
+{
+  "success": true,
+  "messageCode": "DELETED",
+  "message": "Resource deleted successfully",
+  "data": null
 }
 ```
 
@@ -58,13 +90,13 @@ Codes are defined in `@rajkumarganesan93/api` → `MessageCode` enum and resolve
 
 ## Validation Error Codes (422)
 
-Per RFC 4918, **422 Unprocessable Entity** is used when the server understands the request syntax but the content fails semantic validation. This is distinct from 400 which indicates malformed syntax.
+| Code | HTTP Status | Message | When Used |
+|------|-------------|---------|-----------|
+| `VALIDATION_FAILED` | 422 | Validation failed | DTO validation failed (class-validator) |
+| `FIELD_REQUIRED` | 422 | Required field is missing | A required field was not provided |
+| `INVALID_INPUT` | 422 | Invalid input provided | Input format is wrong (bad UUID, invalid enum) |
 
-| Code | HTTP Status | Message Template | When Used |
-|------|-------------|-----------------|-----------|
-| `VALIDATION_FAILED` | 422 | `Validation failed: {reason}` | Request body/params/query failed Zod schema validation |
-| `FIELD_REQUIRED` | 422 | `{field} is required` | A specific required field is missing |
-| `INVALID_INPUT` | 422 | `Invalid input: {reason}` | Input is present but invalid (bad UUID format, invalid params) |
+**Thrown by:** NestJS `ValidationPipe` with `class-validator` decorators on DTOs.
 
 ### Example — Validation Error
 
@@ -72,21 +104,15 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 {
   "success": false,
   "messageCode": "VALIDATION_FAILED",
-  "error": "Validation failed: name: name is required; email: invalid email format",
-  "statusCode": 422,
-  "timestamp": "2026-02-19T10:00:00.123Z"
-}
-```
-
-### Example — Invalid Input
-
-```json
-{
-  "success": false,
-  "messageCode": "INVALID_INPUT",
-  "error": "Invalid input: id: id must be a valid UUID",
-  "statusCode": 422,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "message": "Validation failed",
+  "errors": [
+    {
+      "property": "email",
+      "constraints": {
+        "isEmail": "email must be an email"
+      }
+    }
+  ]
 }
 ```
 
@@ -94,50 +120,32 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 
 ## Authentication & Authorization Codes
 
-| Code | HTTP Status | Message Template | When Used |
-|------|-------------|-----------------|-----------|
-| `UNAUTHORIZED` | 401 | `Authentication required` | Missing `Authorization` header, invalid JWT signature, or malformed token |
-| `FORBIDDEN` | 403 | `You do not have permission to perform this action` | Valid token but user lacks required role (e.g., `admin`) |
-| `INVALID_CREDENTIALS` | 401 | `Invalid credentials` | Login attempt with wrong username/password |
-| `TOKEN_EXPIRED` | 401 | `Token has expired` | JWT `exp` claim is in the past |
+| Code | HTTP Status | Message | When Used |
+|------|-------------|---------|-----------|
+| `UNAUTHORIZED` | 401 | Unauthorized access | Missing `Authorization` header, invalid/expired JWT |
+| `FORBIDDEN` | 403 | Access forbidden | Valid token but user lacks required role |
 
 **Thrown by:**
-- `createAuthMiddleware` → `UNAUTHORIZED` (missing/invalid token), `TOKEN_EXPIRED` (expired token)
-- `authorize('admin')` → `FORBIDDEN` (user has no matching role)
+- `JwtAuthGuard` → `UNAUTHORIZED` (missing or invalid token)
+- `RolesGuard` → `FORBIDDEN` (user lacks required `@Roles()`)
 
-### Example — Unauthorized (missing or invalid token)
+### Example — Unauthorized
 
 ```json
 {
   "success": false,
   "messageCode": "UNAUTHORIZED",
-  "error": "Authentication required",
-  "statusCode": 401,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "message": "Missing or invalid authorization header"
 }
 ```
 
-### Example — Token Expired
-
-```json
-{
-  "success": false,
-  "messageCode": "TOKEN_EXPIRED",
-  "error": "Token has expired",
-  "statusCode": 401,
-  "timestamp": "2026-02-19T10:00:00.123Z"
-}
-```
-
-### Example — Forbidden (insufficient role)
+### Example — Forbidden
 
 ```json
 {
   "success": false,
   "messageCode": "FORBIDDEN",
-  "error": "You do not have permission to perform this action",
-  "statusCode": 403,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "message": "Access forbidden"
 }
 ```
 
@@ -145,12 +153,12 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 
 ## Resource Error Codes
 
-| Code | HTTP Status | Message Template | When Used |
-|------|-------------|-----------------|-----------|
-| `NOT_FOUND` | 404 | `{resource} not found` | Resource with given ID doesn't exist or is soft-deleted |
-| `CONFLICT` | 409 | `{resource} already exists` | Generic conflict (resource already exists) |
-| `DUPLICATE_ENTRY` | 409 | `{resource} with this {field} already exists` | Unique constraint violation on a specific field |
-| `DUPLICATE_EMAIL` | 409 | `Email {email} is already in use` | Email uniqueness violation |
+| Code | HTTP Status | Message | When Used |
+|------|-------------|---------|-----------|
+| `NOT_FOUND` | 404 | Resource not found | `findById` returned null |
+| `ALREADY_EXISTS` | 409 | Resource already exists | Unique constraint violation |
+
+**Thrown by:** Use case classes via `NotFoundException` and `AlreadyExistsException`.
 
 ### Example — Not Found
 
@@ -158,21 +166,19 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 {
   "success": false,
   "messageCode": "NOT_FOUND",
-  "error": "User not found",
-  "statusCode": 404,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "message": "Resource not found",
+  "errors": ["User not found"]
 }
 ```
 
-### Example — Duplicate Entry
+### Example — Already Exists
 
 ```json
 {
   "success": false,
-  "messageCode": "DUPLICATE_EMAIL",
-  "error": "Email alice@example.com is already in use",
-  "statusCode": 409,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "messageCode": "ALREADY_EXISTS",
+  "message": "Resource already exists",
+  "errors": ["User already exists"]
 }
 ```
 
@@ -180,10 +186,11 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 
 ## Server Error Codes
 
-| Code | HTTP Status | Message Template | When Used |
-|------|-------------|-----------------|-----------|
-| `INTERNAL_ERROR` | 500 | `An unexpected error occurred` | Unhandled exception or unknown server error |
-| `SERVICE_UNAVAILABLE` | 503 | `Service is temporarily unavailable` | Service is down for maintenance or overloaded |
+| Code | HTTP Status | Message | When Used |
+|------|-------------|---------|-----------|
+| `INTERNAL_ERROR` | 500 | Internal server error | Unhandled exception |
+
+All unhandled exceptions are caught by `GlobalExceptionFilter`, logged with full stack trace via Pino, and returned as a clean `INTERNAL_ERROR` response. The raw error message is included in the response for debugging (in production, you may want to strip it).
 
 ### Example — Internal Error
 
@@ -191,54 +198,45 @@ Per RFC 4918, **422 Unprocessable Entity** is used when the server understands t
 {
   "success": false,
   "messageCode": "INTERNAL_ERROR",
-  "error": "An unexpected error occurred",
-  "statusCode": 500,
-  "timestamp": "2026-02-19T10:00:00.123Z"
+  "message": "Internal server error"
 }
 ```
 
 ---
 
-## HTTP Status Quick Reference
+## Exception Classes
 
-The `HttpStatus` enum in `@rajkumarganesan93/api` provides named constants for all HTTP status codes used in the project:
+Use these in your use cases and services to throw typed errors:
 
-| Constant | Value | Category |
-|----------|-------|----------|
-| `HttpStatus.OK` | 200 | Success |
-| `HttpStatus.CREATED` | 201 | Success |
-| `HttpStatus.NO_CONTENT` | 204 | Success |
-| `HttpStatus.BAD_REQUEST` | 400 | Client Error |
-| `HttpStatus.UNAUTHORIZED` | 401 | Client Error |
-| `HttpStatus.FORBIDDEN` | 403 | Client Error |
-| `HttpStatus.NOT_FOUND` | 404 | Client Error |
-| `HttpStatus.CONFLICT` | 409 | Client Error |
-| `HttpStatus.PAYLOAD_TOO_LARGE` | 413 | Client Error |
-| `HttpStatus.UNPROCESSABLE_ENTITY` | 422 | Client Error |
-| `HttpStatus.INTERNAL_SERVER_ERROR` | 500 | Server Error |
-| `HttpStatus.SERVICE_UNAVAILABLE` | 503 | Server Error |
+```typescript
+import { NotFoundException, AlreadyExistsException, ValidationException } from '@cargoez/api';
 
----
+// 404
+throw new NotFoundException('User');
+// → { success: false, messageCode: "NOT_FOUND", message: "Resource not found", errors: ["User not found"] }
 
-## Message Template Placeholders
+// 409
+throw new AlreadyExistsException('User');
+// → { success: false, messageCode: "ALREADY_EXISTS", message: "Resource already exists", errors: ["User already exists"] }
 
-Templates use `{placeholder}` tokens that are replaced at runtime:
-
-| Placeholder | Description | Used By |
-|-------------|-------------|---------|
-| `{resource}` | Entity name (e.g., "User", "Country") | CREATED, UPDATED, DELETED, FETCHED, LIST_FETCHED, NOT_FOUND, CONFLICT |
-| `{reason}` | Human-readable explanation | BAD_REQUEST, VALIDATION_FAILED, INVALID_INPUT |
-| `{field}` | Field name | FIELD_REQUIRED, DUPLICATE_ENTRY |
-| `{email}` | Email address | DUPLICATE_EMAIL |
-
-Unreplaced placeholders are automatically stripped from the final message.
+// 422
+throw new ValidationException([{ field: 'email', message: 'Invalid format' }]);
+// → { success: false, messageCode: "VALIDATION_FAILED", message: "Validation failed", errors: [...] }
+```
 
 ---
 
 ## Adding New Codes
 
-1. Add the code to `MessageCode` enum in `packages/api/src/messages/MessageCode.ts`
-2. Add the entry to `MessageCatalog` in `packages/api/src/messages/MessageCatalog.ts`
-3. Create a matching `AppError` subclass if needed in `packages/infrastructure/src/errors/AppError.ts`
+1. Add the code to `MessageCode` enum in `libs/api/src/messages/message-code.enum.ts`
+2. Add the entry to `MessageCatalog` map in `libs/api/src/messages/message-catalog.ts`
+3. Optionally create an `AppException` subclass in `libs/api/src/exceptions/app.exceptions.ts`
 4. Update this document
-5. Bump the `@rajkumarganesan93/api` package version
+
+---
+
+## Related Documentation
+
+- [PACKAGES.md](./PACKAGES.md) — Full library reference with all exports
+- [AUTHENTICATION.md](./AUTHENTICATION.md) — Auth flows, token management
+- [DEVELOPMENT.md](./DEVELOPMENT.md) — Development guide, coding conventions

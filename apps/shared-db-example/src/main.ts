@@ -18,10 +18,13 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new ContextInterceptor());
 
+  const port = process.env['SHARED_DB_SERVICE_PORT'] || 3005;
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Shared DB Example Service')
     .setDescription('Country management microservice')
     .setVersion('1.0.0')
+    .addServer(`http://localhost:${port}`, 'Shared DB Example (direct)')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -31,7 +34,6 @@ async function bootstrap() {
     res.json(document);
   });
 
-  const port = process.env['SHARED_DB_SERVICE_PORT'] || 3005;
   await app.listen(port);
   logger.log(`Shared DB Example Service running on http://localhost:${port}/shared-db-example`);
   logger.log(`Swagger UI: http://localhost:${port}/shared-db-example/api-docs`);

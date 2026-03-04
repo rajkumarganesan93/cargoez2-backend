@@ -18,10 +18,13 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new ContextInterceptor());
 
+  const port = process.env['USER_SERVICE_PORT'] || 3001;
+
   const swaggerConfig = new DocumentBuilder()
     .setTitle('User Service')
     .setDescription('User management microservice')
     .setVersion('1.0.0')
+    .addServer(`http://localhost:${port}`, 'User Service (direct)')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
@@ -31,7 +34,6 @@ async function bootstrap() {
     res.json(document);
   });
 
-  const port = process.env['USER_SERVICE_PORT'] || 3001;
   await app.listen(port);
   logger.log(`User Service running on http://localhost:${port}/user-service`);
   logger.log(`Swagger UI: http://localhost:${port}/user-service/api-docs`);

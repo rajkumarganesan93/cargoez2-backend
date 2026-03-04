@@ -784,7 +784,7 @@ A decoded JWT access token from Keycloak contains:
 
 ### What the Backend Checks
 
-Our `createAuthMiddleware` verifies:
+The `JwtAuthGuard` in `@cargoez/infrastructure` verifies:
 
 1. **Signature** — using Keycloak's RSA public key (fetched via JWKS, cached 10 min)
 2. **Algorithm** — must be RS256
@@ -823,88 +823,111 @@ Libraries like `oidc-client-ts` and `react-native-app-auth` handle token refresh
 
 ---
 
-## 14. Backend Middleware Reference
+## 14. Backend Auth Reference (NestJS)
 
-The authentication middleware is in `@rajkumarganesan93/infrastructure`. No backend code changes are needed to support PKCE — the middleware verifies JWTs regardless of how they were obtained.
+Authentication is provided by `@cargoez/infrastructure`. No backend code changes are needed to support PKCE — the `JwtAuthGuard` verifies JWTs regardless of how they were obtained (ROPC, PKCE, Client Credentials).
 
-### createAuthMiddleware
+### AuthModule
 
-Automatically mounted by `createServiceApp` when `KEYCLOAK_ISSUER` is set in `.env`.
+Automatically registers `JwtAuthGuard` (global) and `RolesGuard` (global) when imported in `AppModule`:
 
 ```typescript
-import { createAuthMiddleware } from '@rajkumarganesan93/infrastructure';
-import type { AuthConfig } from '@rajkumarganesan93/infrastructure';
+// app.module.ts
+import { AuthModule, RealtimeModule } from '@cargoez/infrastructure';
 
-// Automatically applied by createServiceApp. Manual usage:
-app.use(createAuthMiddleware({
-  issuer: 'http://localhost:8080/realms/cargoez',
-  audience: 'cargoez-api',
-  publicPaths: ['/health', '/api-docs'],  // defaults
-}));
+@Module({
+  imports: [
+    DatabaseModule.forRoot({ databaseEnvKey: 'USER_SERVICE_DB' }),
+    AuthModule,      // ← Global JWT + Roles guards
+    RealtimeModule,
+  ],
+})
+export class AppModule {}
 ```
 
-**Public paths** (skip authentication): `/health`, `/api-docs`, `/api-docs/*`
+### JwtAuthGuard
 
-### authorize
+Automatically applied to **all routes**. Extracts the Bearer token, verifies it against Keycloak's JWKS endpoint, and attaches decoded claims to `request.user`.
 
-Per-route role enforcement. Must be placed after authentication middleware.
+**To skip authentication on specific routes:**
 
 ```typescript
-import { authorize } from '@rajkumarganesan93/infrastructure';
+import { Public } from '@cargoez/infrastructure';
 
-router.post('/users', authorize('admin'), handler);
-router.put('/users/:id', authorize('admin', 'manager'), handler);
-router.get('/users', handler);  // any authenticated user
+@Get('health')
+@Public()   // ← No JWT required
+health() { ... }
 ```
 
-### AuthUser (attached to req.user)
+### @Roles() Decorator
+
+Per-route role enforcement:
 
 ```typescript
-interface AuthUser {
-  sub: string;              // Keycloak user ID (UUID)
-  email?: string;           // User email
-  preferredUsername?: string; // Username
-  name?: string;            // Full name
-  realmRoles: string[];     // e.g., ['admin', 'user']
-  resourceRoles: string[];  // Client-specific roles
-  tokenPayload: Record<string, unknown>; // Full decoded JWT
-}
+import { Roles } from '@cargoez/infrastructure';
+
+@Post()
+@Roles('admin')                    // Only admin can create
+async create(@Body() dto) { ... }
+
+@Put(':id')
+@Roles('admin', 'manager')        // Admin OR manager can update
+async update(@Param('id') id) { ... }
+
+@Get()
+async findAll() { ... }           // Any authenticated user (no @Roles)
 ```
 
-Access in controllers:
+### Request Context
+
+The `ContextInterceptor` (set globally in `main.ts`) extracts JWT claims into `RequestContext`, available anywhere:
 
 ```typescript
-import type { AuthenticatedRequest } from '@rajkumarganesan93/infrastructure';
+import { getContext } from '@cargoez/infrastructure';
 
-const user = (req as AuthenticatedRequest).user;
-console.log(user.sub, user.email, user.realmRoles);
+const ctx = getContext();
+// { requestId, userId, userEmail, roles, tenantId, timestamp }
 ```
 
 ---
 
 ## 15. Route Protection Reference
 
-### Pattern
+### Pattern (NestJS Decorators)
 
 ```typescript
-// routes.ts
-import { authorize } from '@rajkumarganesan93/infrastructure';
+import { Controller, Get, Post, Put, Delete } from '@nestjs/common';
+import { Public, Roles } from '@cargoez/infrastructure';
 
-// Public (no auth needed — handled by publicPaths in middleware)
-// /health, /api-docs — configured in createAuthMiddleware
+@Controller('users')
+export class UsersController {
+  @Get('health')
+  @Public()                          // No auth required
+  health() { ... }
 
-// Authenticated (any valid token, any role)
-router.get('/users', asyncHandler(controller.getAll));
+  @Get()                             // Any authenticated user
+  findAll() { ... }
 
-// Role-restricted (must have at least one of the listed roles)
-router.post('/users', authorize('admin'), handler);
-router.put('/users/:id', authorize('admin', 'manager'), handler);
-router.delete('/users/:id', authorize('admin'), handler);
+  @Get('me')                         // Any authenticated user
+  getMe() { ... }
+
+  @Post()
+  @Roles('admin')                    // Admin only
+  create(@Body() dto) { ... }
+
+  @Put(':id')
+  @Roles('admin')                    // Admin only
+  update(@Param('id') id, @Body() dto) { ... }
+
+  @Delete(':id')
+  @Roles('admin')                    // Admin only
+  remove(@Param('id') id) { ... }
+}
 ```
 
 ### How Role Checking Works
 
-`authorize('admin', 'manager')` means the user must have **at least one** of those roles (OR logic, not AND). Roles are checked from both `realm_access.roles` and `resource_access.<client>.roles`.
+`@Roles('admin', 'manager')` means the user must have **at least one** of those roles (OR logic, not AND). Roles are read from the JWT's `realm_access.roles` claim.
 
 ---
 
@@ -1036,7 +1059,7 @@ API_URL=http://localhost:3001
 
 1. **Never store or log tokens** — they are sensitive credentials
 2. **Always validate tokens server-side** — never trust the client
-3. **Use `authorize()` on write endpoints** — even if the frontend hides buttons
+3. **Use `@Roles()` on write endpoints** — even if the frontend hides buttons
 4. **Keep `KEYCLOAK_AUDIENCE` set** — prevents tokens from other clients being used
 5. **CORS is configured** — only allowed origins can make API calls
 
@@ -1070,7 +1093,7 @@ API_URL=http://localhost:3001
 ### "403 Forbidden" when calling an endpoint
 
 1. **Check user roles:** decode the JWT at [jwt.io](https://jwt.io) and look at `realm_access.roles`
-2. **Check route requirements:** look at `authorize('admin')` in `routes.ts`
+2. **Check route requirements:** look at `@Roles('admin')` in the controller
 3. **Try with admin user:** get a token with `username=admin&password=admin123`
 
 ### Token request returns error
@@ -1084,7 +1107,7 @@ API_URL=http://localhost:3001
 ### CORS errors from frontend
 
 1. **Check Keycloak web origins:** in `cargoez-realm.json`, ensure your frontend URL is in `webOrigins`
-2. **Check service CORS:** `createServiceApp` includes `cors()` middleware automatically
+2. **Check service CORS:** `app.enableCors()` is called in each service's `main.ts`
 3. **Check redirect URI:** your callback URL must be in `redirectUris`
 
 ### "PKCE code_challenge required" error
