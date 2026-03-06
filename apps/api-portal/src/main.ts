@@ -7,6 +7,17 @@ import { config } from 'dotenv';
 
 config({ path: join(process.cwd(), '.env') });
 
+const ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:5176',
+  'http://localhost:5177',
+  'http://localhost:4200',
+  'http://localhost:8100',
+];
+
 const USER_SERVICE_PORT = process.env['USER_SERVICE_PORT'] || 3001;
 const SHARED_DB_SERVICE_PORT = process.env['SHARED_DB_SERVICE_PORT'] || 3005;
 const PORTAL_PORT = process.env['API_PORTAL_PORT'] || 4000;
@@ -31,7 +42,7 @@ async function fetchServiceDoc(service: typeof SERVICES[number]): Promise<any | 
 
 async function bootstrap() {
   const app = express();
-  app.use(cors());
+  app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 
   for (const service of SERVICES) {
     app.use(createProxyMiddleware({

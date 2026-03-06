@@ -304,7 +304,15 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const logger = new PinoLoggerService();
   app.useLogger(logger);
-  app.enableCors();
+  app.enableCors({
+    origin: [
+      'http://localhost:3000', 'http://localhost:5173',
+      'http://localhost:5174', 'http://localhost:5175',
+      'http://localhost:5176', 'http://localhost:5177',
+      'http://localhost:4200', 'http://localhost:8100',
+    ],
+    credentials: true,
+  });
   app.setGlobalPrefix('my-service');
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.useGlobalFilters(new GlobalExceptionFilter());

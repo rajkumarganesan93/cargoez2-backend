@@ -16,7 +16,21 @@ import { domainEventBus, DomainEvent } from '../events/domain-event-bus';
 
 const ROOM_PATTERN = /^(entity|tenant):[a-zA-Z0-9_-]+(:[a-zA-Z0-9_-]+)?$/;
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({
+  cors: {
+    origin: [
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175',
+      'http://localhost:5176',
+      'http://localhost:5177',
+      'http://localhost:4200',
+      'http://localhost:8100',
+    ],
+    credentials: true,
+  },
+})
 export class RealtimeGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer() server!: Server;
   private logger = new Logger('RealtimeGateway');

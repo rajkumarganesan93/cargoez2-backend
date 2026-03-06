@@ -229,6 +229,23 @@ All API calls through the portal are transparently forwarded:
 - `http://localhost:4000/user-service/*` → `http://localhost:3001/user-service/*`
 - `http://localhost:4000/shared-db-example/*` → `http://localhost:3005/shared-db-example/*`
 
+### CORS Configuration
+
+All services use an explicit CORS origin whitelist (not a wildcard). The allowed origins cover the frontend micro-frontend architecture:
+
+| App | Port | Description |
+|---|---|---|
+| CargoEz Shell | 5173 | Host app that loads remote micro-frontends |
+| Contacts | 5174 | Remote micro-frontend |
+| Freight | 5175 | Remote micro-frontend |
+| Books | 5176 | Remote micro-frontend |
+| Admin | 5177 | Standalone admin app |
+| CRA / Next.js | 3000 | Alternative React setups |
+| Angular | 4200 | Angular dev server |
+| Ionic | 8100 | Ionic dev server |
+
+Each micro-frontend runs independently and makes its own API calls, so all ports must be whitelisted in both the backend CORS config and the Keycloak `cargoez-web` client's redirect URIs / web origins.
+
 ---
 
 ## Clean Architecture (per service)
@@ -347,7 +364,7 @@ Routes are protected via the `@Roles()` decorator:
 | Client ID | Grant Type | Purpose |
 |---|---|---|
 | `cargoez-api` | Password (ROPC) | Postman / API testing |
-| `cargoez-web` | Auth Code + PKCE | Frontend web apps (ports 3000, 5173, 5174, 4200) |
+| `cargoez-web` | Auth Code + PKCE | Frontend micro-frontends (ports 5173–5177, plus 3000, 4200, 8100) |
 | `cargoez-mobile` | Auth Code + PKCE | Mobile apps |
 | `cargoez-service` | Client Credentials | Service-to-service |
 
@@ -410,6 +427,15 @@ config({ path: join(process.cwd(), '.env') });
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableCors({
+    origin: [
+      'http://localhost:3000', 'http://localhost:5173',
+      'http://localhost:5174', 'http://localhost:5175',
+      'http://localhost:5176', 'http://localhost:5177',
+      'http://localhost:4200', 'http://localhost:8100',
+    ],
+    credentials: true,
+  });
   app.setGlobalPrefix('my-service');
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.useGlobalFilters(new GlobalExceptionFilter());

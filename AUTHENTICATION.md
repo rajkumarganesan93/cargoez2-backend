@@ -156,8 +156,9 @@ The `cargoez` realm has 4 pre-configured clients, each for a specific use case:
 | Type | Public (no secret) |
 | Grant Type | Authorization Code + PKCE (S256) |
 | PKCE Enforcement | Required (S256 only) |
-| Redirect URIs | `http://localhost:3000/*` (React/Next.js), `http://localhost:5173/*` (Vite), `http://localhost:4200/*` (Angular), `http://localhost:8100/*` (Ionic) |
-| Use For | React, Angular, Vue, Next.js, or any browser-based SPA |
+| Redirect URIs | `http://localhost:3000/*`, `http://localhost:5173/*` through `http://localhost:5177/*`, `http://localhost:4200/*`, `http://localhost:8100/*` |
+| Web Origins | Same ports without the `/*` suffix |
+| Use For | React micro-frontends (Shell :5173, Contacts :5174, Freight :5175, Books :5176, Admin :5177), Angular, or any browser-based SPA |
 
 ### cargoez-mobile (Mobile Apps)
 
@@ -561,7 +562,17 @@ export class AppComponent {
 
 ### Adding Your Frontend URL to Keycloak
 
-If your frontend runs on a different port, update `keycloak/cargoez-realm.json`:
+The `cargoez-web` client is pre-configured for the micro-frontend architecture where each module runs on its own port:
+
+| App | Port | Description |
+|-----|------|-------------|
+| CargoEz Shell | 5173 | Host app that loads remote micro-frontends |
+| Contacts | 5174 | Remote micro-frontend |
+| Freight | 5175 | Remote micro-frontend |
+| Books | 5176 | Remote micro-frontend |
+| Admin | 5177 | Standalone admin app |
+
+**Current `cargoez-web` redirect URIs and web origins** (in `keycloak/cargoez-realm.json`):
 
 ```json
 {
@@ -569,19 +580,29 @@ If your frontend runs on a different port, update `keycloak/cargoez-realm.json`:
   "redirectUris": [
     "http://localhost:3000/*",
     "http://localhost:5173/*",
+    "http://localhost:5174/*",
+    "http://localhost:5175/*",
+    "http://localhost:5176/*",
+    "http://localhost:5177/*",
     "http://localhost:4200/*",
-    "http://your-custom-port/*"
+    "http://localhost:8100/*"
   ],
   "webOrigins": [
     "http://localhost:3000",
     "http://localhost:5173",
+    "http://localhost:5174",
+    "http://localhost:5175",
+    "http://localhost:5176",
+    "http://localhost:5177",
     "http://localhost:4200",
-    "http://your-custom-port"
+    "http://localhost:8100"
   ]
 }
 ```
 
-Or add it via the Keycloak Admin Console: **Realm Settings → Clients → cargoez-web → Valid Redirect URIs**.
+If your frontend runs on a different port, add it to both `redirectUris` (with `/*` suffix) and `webOrigins` in `keycloak/cargoez-realm.json`, then re-import the realm or update via the Keycloak Admin Console: **Clients → cargoez-web → Settings → Valid Redirect URIs / Web Origins**.
+
+> **Important:** Changing the JSON file only updates the file on disk. You must also update the running Keycloak instance (re-import realm, use the Admin Console, or call the Admin REST API).
 
 ---
 
@@ -1061,7 +1082,7 @@ API_URL=http://localhost:3001
 2. **Always validate tokens server-side** — never trust the client
 3. **Use `@Roles()` on write endpoints** — even if the frontend hides buttons
 4. **Keep `KEYCLOAK_AUDIENCE` set** — prevents tokens from other clients being used
-5. **CORS is configured** — only allowed origins can make API calls
+5. **CORS is configured with an explicit origin whitelist** — only allowed frontend origins can make API calls (no wildcard `*`)
 
 ### For Frontend Developers
 
@@ -1107,8 +1128,9 @@ API_URL=http://localhost:3001
 ### CORS errors from frontend
 
 1. **Check Keycloak web origins:** in `cargoez-realm.json`, ensure your frontend URL is in `webOrigins`
-2. **Check service CORS:** `app.enableCors()` is called in each service's `main.ts`
-3. **Check redirect URI:** your callback URL must be in `redirectUris`
+2. **Check service CORS origin whitelist:** each service's `main.ts` uses `app.enableCors({ origin: [...] })` with an explicit list of allowed origins — verify your port is included
+3. **Check API Portal CORS:** `apps/api-portal/src/main.ts` has an `ALLOWED_ORIGINS` array — verify your port is included
+4. **Check redirect URI:** your callback URL must be in `redirectUris`
 
 ### "PKCE code_challenge required" error
 
