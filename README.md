@@ -34,7 +34,7 @@ BACKEND/
 │   │       ├── presentation/            # Controllers, DTOs, NestJS module wiring
 │   │       ├── app.module.ts            # Root module
 │   │       └── main.ts                  # Bootstrap
-│   ├── shared-db-example/               # Country management CRUD (port 3005)
+│   ├── auth-service/                    # RBAC + ABAC permission management (port 3002)
 │   │   └── src/                         # Same Clean Architecture layers as above
 │   └── api-portal/                      # Swagger UI aggregator + reverse proxy (port 4000)
 │
@@ -42,7 +42,8 @@ BACKEND/
 │   ├── domain/                          # BaseEntity, IBaseRepository, PaginationOptions
 │   ├── api/                             # MessageCode, MessageCatalog, ApiResponse, exceptions
 │   ├── shared/                          # DatabaseModule (Knex provider), @InjectKnex()
-│   └── infrastructure/                  # Auth guards, request context, BaseRepository,
+│   └── infrastructure/                  # Auth guards, permissions guard, ABAC evaluator,
+│                                        #   request context, BaseRepository,
 │                                        #   realtime gateway, logger, exception filter
 │
 ├── keycloak/
@@ -85,7 +86,7 @@ Each microservice uses its own database. Connect to PostgreSQL and create them:
 
 ```sql
 CREATE DATABASE user_service_db;
-CREATE DATABASE master_db;
+CREATE DATABASE auth_db;
 ```
 
 ### Step 3 — Configure environment
@@ -110,12 +111,12 @@ USER_SERVICE_DB_NAME=user_service_db
 # USER_SERVICE_DB_USER=user_svc_user
 # USER_SERVICE_DB_PASSWORD="secret"
 
-# Shared DB Example database (prefix: SHARED_DB)
-SHARED_DB_DB_NAME=master_db
-# SHARED_DB_DB_HOST=shared-instance.rds.amazonaws.com
-# SHARED_DB_DB_PORT=5432
-# SHARED_DB_DB_USER=shared_user
-# SHARED_DB_DB_PASSWORD="secret"
+# Auth Service database (prefix: AUTH_SERVICE)
+AUTH_SERVICE_DB_NAME=auth_db
+# AUTH_SERVICE_DB_HOST=localhost
+# AUTH_SERVICE_DB_PORT=5432
+# AUTH_SERVICE_DB_USER=auth_user
+# AUTH_SERVICE_DB_PASSWORD="secret"
 
 # Keycloak
 KEYCLOAK_URL=http://localhost:8080
@@ -123,7 +124,7 @@ KEYCLOAK_REALM=cargoez
 
 # Services (optional port overrides)
 USER_SERVICE_PORT=3001
-SHARED_DB_SERVICE_PORT=3005
+AUTH_SERVICE_PORT=3002
 API_PORTAL_PORT=4000
 ```
 
@@ -135,7 +136,7 @@ API_PORTAL_PORT=4000
 
 ```bash
 pnpm migrate:user      # Creates tables in user_service_db
-pnpm migrate:shared    # Creates tables in master_db
+pnpm migrate:auth      # Creates permission tables + seed data in auth_db
 ```
 
 ### Step 5 — Build everything
@@ -185,12 +186,12 @@ pnpm start:all
 
 # Or individually
 pnpm start:user       # User Service on :3001
-pnpm start:shared     # Shared DB Example on :3005
+pnpm start:auth       # Auth Service on :3002
 pnpm start:portal     # API Portal on :4000
 
 # Or direct node (after build)
 pnpm dev:user
-pnpm dev:shared
+pnpm dev:auth
 pnpm dev:portal
 ```
 
@@ -201,8 +202,8 @@ pnpm dev:portal
 | **API Portal** | **http://localhost:4000/api-docs** | **Swagger UI with service selector dropdown** |
 | User Service — Swagger | http://localhost:3001/user-service/api-docs | User Service API docs |
 | User Service — Health | http://localhost:3001/user-service/health | Health check |
-| Shared DB — Swagger | http://localhost:3005/shared-db-example/api-docs | Shared DB Example API docs |
-| Shared DB — Health | http://localhost:3005/shared-db-example/health | Health check |
+| Auth Service — Swagger | http://localhost:3002/auth-service/api-docs | Auth Service API docs |
+| Auth Service — Health | http://localhost:3002/auth-service/health | Health check |
 | Keycloak | http://localhost:8080 | Identity provider |
 
 ---
@@ -212,7 +213,7 @@ pnpm dev:portal
 | Service | Port | Database | Global Prefix | Description |
 |---|---|---|---|---|
 | `user-service` | 3001 | `user_service_db` | `/user-service` | User CRUD, `/users/me` |
-| `shared-db-example` | 3005 | `master_db` | `/shared-db-example` | Country CRUD |
+| `auth-service` | 3002 | `auth_db` | `/auth-service` | RBAC + ABAC permission management |
 | `api-portal` | 4000 | — | — | Swagger aggregator + reverse proxy |
 
 Each service is a standalone NestJS application with its own database, Swagger docs, and WebSocket gateway. Services can be deployed and scaled independently.
@@ -227,7 +228,7 @@ The API Portal at `http://localhost:4000/api-docs` provides:
 
 All API calls through the portal are transparently forwarded:
 - `http://localhost:4000/user-service/*` → `http://localhost:3001/user-service/*`
-- `http://localhost:4000/shared-db-example/*` → `http://localhost:3005/shared-db-example/*`
+- `http://localhost:4000/auth-service/*` → `http://localhost:3002/auth-service/*`
 
 ### CORS Configuration
 
@@ -312,7 +313,7 @@ Use cases depend on the `IUserRepository` domain interface. NestJS injects the `
 | `@cargoez/domain` | `libs/domain` | `BaseEntity`, `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
 | `@cargoez/api` | `libs/api` | `MessageCode`, `MessageCatalog`, `ApiResponse`, `AppException`, `NotFoundException`, `AlreadyExistsException`, `ValidationException` |
 | `@cargoez/shared` | `libs/shared` | `DatabaseModule.forRoot()`, `@InjectKnex()`, `KNEX_CONNECTION` |
-| `@cargoez/infrastructure` | `libs/infrastructure` | `JwtAuthGuard`, `RolesGuard`, `@Public()`, `@Roles()`, `AuthModule`, `RequestContext`, `ContextInterceptor`, `BaseRepository`, `RealtimeGateway`, `RealtimeModule`, `DomainEvent`, `domainEventBus`, `PinoLoggerService`, `GlobalExceptionFilter` |
+| `@cargoez/infrastructure` | `libs/infrastructure` | `JwtAuthGuard`, `RolesGuard`, `PermissionsGuard`, `@Public()`, `@Roles()`, `@RequirePermission()`, `PermissionCache`, `AbacEvaluator`, `AuthModule`, `RequestContext`, `ContextInterceptor`, `BaseRepository`, `RealtimeGateway`, `RealtimeModule`, `DomainEvent`, `domainEventBus`, `PinoLoggerService`, `GlobalExceptionFilter` |
 
 **Dependency graph:**
 
@@ -348,16 +349,30 @@ curl http://localhost:4000/user-service/users \
 
 In Swagger UI, click **Authorize** and paste: `Bearer <access_token>`
 
-### Role-Based Access Control
+### Authorization: Pure ABAC with Keycloak Authentication
 
-Routes are protected via the `@Roles()` decorator:
+The system uses a **pure ABAC** (Attribute-Based Access Control) model for all business operations. Keycloak provides authentication and role identity; the auth-service ABAC database is the single source of truth for authorization decisions.
 
-| Operation | Required Role |
-|---|---|
-| `GET` (list, get by ID, `/me`) | Any authenticated user |
-| `POST` (create) | `admin` |
-| `PUT` (update) | `admin` |
-| `DELETE` (delete) | `admin` |
+**Three-layer guard pipeline (every request):**
+
+1. **JwtAuthGuard** — Validates JWT via Keycloak JWKS, extracts user identity and roles
+2. **RolesGuard** — Checks `@Roles()` if present (reserved for area-level controller gates only)
+3. **PermissionsGuard** — Checks `@RequirePermission()`, resolves permissions from auth-service (cached 5 min), evaluates ABAC conditions, attaches filters to request
+
+Permission keys follow the format `{module}.{screen}.{operation}` (e.g., `user-management.users.create`).
+
+| Decorator | Use Case | Description |
+|---|---|---|
+| `@RequirePermission('module.screen.op')` | All write endpoints | ABAC-controlled via auth-service database |
+| `@Roles('super-admin')` | Area-level gates | Restricts entire controller to certain roles |
+| `@Public()` | Health checks | Skip authentication entirely |
+
+**Default roles:** `super-admin`, `admin`, `manager`, `user`, `viewer`
+
+**ABAC conditions** (configured per role-permission in `role_permissions.conditions` JSONB):
+- `tenant_isolation` — auto-filters queries by tenant
+- `ownership_only` — restricts updates/deletes to records created by the user
+- `department`, `max_amount`, `time_window`, `custom_rules`
 
 ### Keycloak Clients
 
@@ -470,11 +485,11 @@ export class AppModule {}
 | Module | What it does |
 |---|---|
 | `DatabaseModule.forRoot()` | Knex connection pool, injected via `@InjectKnex()`. Accepts `connectionPrefix` for per-service DB connections (host, port, user, password, database). |
-| `AuthModule` | Global `JwtAuthGuard` (Keycloak JWKS) + `RolesGuard`. Use `@Public()` to skip auth, `@Roles('admin')` for role checks. |
+| `AuthModule` | Global `JwtAuthGuard` (Keycloak JWKS) + `RolesGuard` + `PermissionsGuard`. Use `@Public()` to skip auth, `@RequirePermission('module.screen.operation')` for ABAC-controlled authorization, `@Roles()` for area-level controller gates only. |
 | `RealtimeModule` | Socket.IO WebSocket gateway with JWT-authenticated connections. Auto-broadcasts domain events. |
 | `ContextInterceptor` | AsyncLocalStorage-based `RequestContext` (`userId`, `userEmail`, `roles`, `tenantId`, `requestId`). |
 | `GlobalExceptionFilter` | Catches all exceptions and returns consistent `ApiResponse` error format via `MessageCatalog`. |
-| `BaseRepository` | Generic Knex CRUD with pagination, search, auto audit fields (`createdBy`, `modifiedBy`), and domain event emission. |
+| `BaseRepository` | Generic Knex CRUD with pagination, search, auto audit fields (`createdBy`, `modifiedBy`), ABAC filter enforcement, and domain event emission. |
 
 ---
 
@@ -529,15 +544,15 @@ socket.emit('unsubscribe', { room: 'entity:users' });
 | `pnpm install` | Install all dependencies |
 | `pnpm build` | Build all libs and apps (Nx cached, dependency-aware) |
 | `pnpm build:affected` | Build only changed projects |
-| `pnpm start:all` | Start all services in parallel (via Nx) |
+| `pnpm start:all` | Start all services in parallel (via Nx, `--parallel=3`) |
 | `pnpm start:user` | Start user-service |
-| `pnpm start:shared` | Start shared-db-example |
+| `pnpm start:auth` | Start auth-service |
 | `pnpm start:portal` | Start API Portal |
 | `pnpm dev:user` | Run user-service directly (after build) |
-| `pnpm dev:shared` | Run shared-db-example directly (after build) |
+| `pnpm dev:auth` | Run auth-service directly (after build) |
 | `pnpm dev:portal` | Run API Portal directly (after build) |
 | `pnpm migrate:user` | Run user-service DB migrations |
-| `pnpm migrate:shared` | Run shared-db-example DB migrations |
+| `pnpm migrate:auth` | Run auth-service DB migrations (creates permission tables + seed data) |
 | `pnpm test` | Run tests (Nx cached) |
 | `pnpm lint` | Lint all projects (Nx cached) |
 | `pnpm graph` | Open Nx dependency graph visualization |
@@ -552,6 +567,7 @@ socket.emit('unsubscribe', { room: 'entity:users' });
 | [DEVELOPMENT.md](DEVELOPMENT.md) | Development guide — Clean Architecture, adding new services, coding conventions |
 | [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, OAuth 2.0 flows (ROPC, PKCE, Client Credentials), token management |
 | [ERROR_CODES.md](ERROR_CODES.md) | Message codes, HTTP statuses, error response examples |
+| [RBAC-ABAC.md](RBAC-ABAC.md) | RBAC + ABAC permission system — architecture, API endpoints, ABAC conditions |
 | [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md) | Express → NestJS migration analysis & decision record |
 
 ---

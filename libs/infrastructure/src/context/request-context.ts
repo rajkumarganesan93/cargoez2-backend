@@ -7,6 +7,7 @@ export interface RequestContext {
   roles: string[];
   tenantId?: string;
   timestamp: Date;
+  abacFilters?: Record<string, any>;
 }
 
 const asyncLocalStorage = new AsyncLocalStorage<RequestContext>();

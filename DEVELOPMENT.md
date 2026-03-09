@@ -34,11 +34,15 @@
 └────────────┬────────────────────────┬───────────────────┘
              │                        │
    ┌─────────▼─────────┐   ┌─────────▼──────────────┐
-   │ user-service :3001 │   │ shared-db-example :3005 │
-   │ DB: user_service_db│   │ DB: master_db           │
-   │ Table: users       │   │ Table: countries        │
-   └─────────┬──────────┘   └─────────┬──────────────┘
-             │                        │
+   │ user-service :3001 │   │ auth-service :3002     │
+   │ DB: user_service_db│   │ DB: auth_db            │
+   │ Table: users       │   │ Tables: roles,         │
+   │                    │   │   modules, screens,    │
+   │                    │   │   operations,          │
+   │                    │   │   permissions,          │
+   │                    │   │   role_permissions      │
+   └─────────┬──────────┘   └──────────┬───────────┘
+             │                         │
    ┌─────────▼────────────────────────▼──────────────┐
    │              Shared Libraries                    │
    │  @cargoez/domain  @cargoez/api                  │
@@ -195,7 +199,7 @@ export class UsersController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermission('user-management.users.create')
   async create(@Body() dto: CreateUserDto) {
     const user = await this.createUser.execute(dto);
     return createSuccessResponse(MessageCode.CREATED, user);
@@ -420,7 +424,7 @@ Each microservice can use its own database — and optionally its own database s
 | Service | Prefix | Env Vars | Default DB |
 |---|---|---|---|
 | `user-service` | `USER_SERVICE` | `USER_SERVICE_DB_HOST`, `USER_SERVICE_DB_PORT`, `USER_SERVICE_DB_USER`, `USER_SERVICE_DB_PASSWORD`, `USER_SERVICE_DB_NAME` | `user_service_db` |
-| `shared-db-example` | `SHARED_DB` | `SHARED_DB_DB_HOST`, `SHARED_DB_DB_PORT`, `SHARED_DB_DB_USER`, `SHARED_DB_DB_PASSWORD`, `SHARED_DB_DB_NAME` | `master_db` |
+| `auth-service` | `AUTH_SERVICE` | `AUTH_SERVICE_DB_HOST`, `AUTH_SERVICE_DB_PORT`, `AUTH_SERVICE_DB_USER`, `AUTH_SERVICE_DB_PASSWORD`, `AUTH_SERVICE_DB_NAME` | `auth_db` |
 
 Each `{PREFIX}_DB_*` variable falls back to the shared `DB_*` default if not set. This means:
 - **Same server, different databases** — just set `{PREFIX}_DB_NAME`
@@ -443,12 +447,12 @@ DB_PASSWORD="password"
 # User Service — only overrides DB name (uses shared host/port/user/password)
 USER_SERVICE_DB_NAME=user_service_db
 
-# Shared DB — uses a completely different server
-SHARED_DB_DB_HOST=shared-instance.rds.amazonaws.com
-SHARED_DB_DB_PORT=5433
-SHARED_DB_DB_USER=shared_user
-SHARED_DB_DB_PASSWORD="different_password"
-SHARED_DB_DB_NAME=master_db
+# Auth Service — uses a completely different server (example)
+# AUTH_SERVICE_DB_HOST=other-instance.rds.amazonaws.com
+# AUTH_SERVICE_DB_PORT=5433
+# AUTH_SERVICE_DB_USER=auth_user
+# AUTH_SERVICE_DB_PASSWORD="different_password"
+# AUTH_SERVICE_DB_NAME=auth_db
 ```
 
 The `useFactory` callback defers `process.env` reads to NestJS DI resolution time, ensuring `dotenv.config()` has already run.
@@ -543,19 +547,25 @@ The `GET /users/me` endpoint returns the current context extracted from the JWT:
 
 ### How It Works
 
-1. `JwtAuthGuard` (global) extracts the Bearer token from the `Authorization` header
-2. Token is verified against Keycloak's JWKS endpoint (`/protocol/openid-connect/certs`)
-3. Decoded claims are attached to `request.user`
-4. `ContextInterceptor` populates `RequestContext` from the decoded JWT
-5. `RolesGuard` checks `@Roles()` decorator against `realm_access.roles`
+1. **JwtAuthGuard** (global) — Extracts the Bearer token, verifies it against Keycloak's JWKS endpoint, attaches decoded claims to `request.user`. Skipped on `@Public()` routes.
+2. **RolesGuard** (global) — Checks `@Roles()` decorator against `realm_access.roles`. No-op if no `@Roles()` present. Reserved for area-level controller gates only.
+3. **PermissionsGuard** (global) — Checks `@RequirePermission()` decorator against auth-service permissions (cached 5 min), evaluates ABAC conditions (tenant isolation, ownership, etc.), attaches `request.abacFilters` for `BaseRepository`.
+4. **ContextInterceptor** — Populates `RequestContext` from the decoded JWT (userId, email, roles, tenantId, ABAC filters).
 
 ### Decorators
 
 ```typescript
-@Public()          // Skip JWT verification for this route
-@Roles('admin')    // Require 'admin' role
-@Roles('admin', 'manager')  // Require any of these roles
+@Public()                                            // Skip JWT verification for this route
+@RequirePermission('user-management.users.create')   // ABAC-controlled (primary authorization)
+@Roles('super-admin')                                // Area-level gate (controller-level only)
 ```
+
+**Authorization strategy:**
+- **`@RequirePermission()`** is the sole authorization mechanism for all business CRUD operations. The auth-service ABAC database controls who can do what.
+- **`@Roles()`** is reserved for area-level segregation only (e.g., an entire diagnostics controller). Do NOT use on individual methods.
+- Endpoints without any decorator are accessible to any authenticated user.
+
+> See [RBAC-ABAC.md](RBAC-ABAC.md) for the complete ABAC permission system documentation.
 
 ### Getting a Token
 

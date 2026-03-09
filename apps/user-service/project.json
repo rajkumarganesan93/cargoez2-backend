@@ -12,6 +12,7 @@
         "outputPath": "dist/apps/user-service",
         "main": "apps/user-service/src/main.ts",
         "tsConfig": "apps/user-service/tsconfig.app.json",
+        "rootDir": ".",
         "assets": []
       }
     },
@@ -19,7 +20,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "command": "node -r ./register-paths.js dist/apps/user-service/src/main.js"
+        "command": "node -r ./register-paths.js dist/apps/user-service/apps/user-service/src/main.js"
       }
     },
     "migrate": {

@@ -19,12 +19,12 @@ const ALLOWED_ORIGINS = [
 ];
 
 const USER_SERVICE_PORT = process.env['USER_SERVICE_PORT'] || 3001;
-const SHARED_DB_SERVICE_PORT = process.env['SHARED_DB_SERVICE_PORT'] || 3005;
+const AUTH_SERVICE_PORT = process.env['AUTH_SERVICE_PORT'] || 3002;
 const PORTAL_PORT = process.env['API_PORTAL_PORT'] || 4000;
 
 const SERVICES = [
   { name: 'User Service', slug: 'user-service', prefix: '/user-service', target: `http://localhost:${USER_SERVICE_PORT}`, docsUrl: `http://localhost:${USER_SERVICE_PORT}/user-service/api-docs/json` },
-  { name: 'Shared DB Example', slug: 'shared-db-example', prefix: '/shared-db-example', target: `http://localhost:${SHARED_DB_SERVICE_PORT}`, docsUrl: `http://localhost:${SHARED_DB_SERVICE_PORT}/shared-db-example/api-docs/json` },
+  { name: 'Auth Service', slug: 'auth-service', prefix: '/auth-service', target: `http://localhost:${AUTH_SERVICE_PORT}`, docsUrl: `http://localhost:${AUTH_SERVICE_PORT}/auth-service/api-docs/json` },
 ];
 
 async function fetchServiceDoc(service: typeof SERVICES[number]): Promise<any | null> {

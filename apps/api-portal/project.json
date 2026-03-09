@@ -12,6 +12,7 @@
         "outputPath": "dist/apps/api-portal",
         "main": "apps/api-portal/src/main.ts",
         "tsConfig": "apps/api-portal/tsconfig.app.json",
+        "rootDir": ".",
         "assets": []
       }
     },
@@ -19,7 +20,7 @@
       "executor": "nx:run-commands",
       "dependsOn": ["build"],
       "options": {
-        "command": "node -r ./register-paths.js dist/apps/api-portal/src/main.js"
+        "command": "node -r ./register-paths.js dist/apps/api-portal/apps/api-portal/src/main.js"
       }
     }
   }

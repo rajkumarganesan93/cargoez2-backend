@@ -20,6 +20,7 @@ export class ContextInterceptor implements NestInterceptor {
       roles: user?.realm_access?.roles || [],
       tenantId: request.headers['x-tenant-id'] || undefined,
       timestamp: new Date(),
+      abacFilters: request.abacFilters || undefined,
     };
 
     return new Observable((subscriber) => {

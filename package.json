@@ -10,14 +10,14 @@
     "lint": "nx run-many -t lint",
     "lint:affected": "nx affected -t lint",
     "start:user": "nx serve user-service",
-    "start:shared": "nx serve shared-db-example",
     "start:portal": "nx serve api-portal",
+    "start:auth": "nx serve auth-service",
     "start:all": "nx run-many -t serve --parallel=3",
     "dev:user": "node -r ./register-paths.js dist/apps/user-service/src/main.js",
-    "dev:shared": "node -r ./register-paths.js dist/apps/shared-db-example/src/main.js",
+    "dev:auth": "node -r ./register-paths.js dist/apps/auth-service/src/main.js",
     "dev:portal": "node -r ./register-paths.js dist/apps/api-portal/src/main.js",
     "migrate:user": "nx run user-service:migrate",
-    "migrate:shared": "nx run shared-db-example:migrate",
+    "migrate:auth": "nx run auth-service:migrate",
     "graph": "nx graph"
   },
   "dependencies": {

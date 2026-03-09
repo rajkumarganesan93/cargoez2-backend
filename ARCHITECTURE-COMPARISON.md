@@ -53,7 +53,7 @@ Option C was chosen to leverage NestJS's built-in dependency injection, decorato
 | Package Manager | pnpm 10 (fast, strict, disk-efficient) |
 | Libraries | 4 workspace libs (`@cargoez/*`) |
 | Validation | class-validator + class-transformer (DTO decorators) |
-| Auth | `AuthModule` with global `JwtAuthGuard` + `RolesGuard` |
+| Auth | `AuthModule` with global `JwtAuthGuard` + `RolesGuard` + `PermissionsGuard` (ABAC) |
 | DI | NestJS IoC container with DI tokens |
 | Swagger | Auto-generated from `@ApiProperty`, `@ApiResponse` decorators |
 | App Bootstrap | NestJS `NestFactory.create()` + global pipes/filters/interceptors |
@@ -76,7 +76,7 @@ All features from the original architecture were re-implemented in NestJS:
 | Auto Audit Fields | BaseRepository auto-populates `createdBy`, `modifiedBy` | Same behavior, reads from `RequestContext` |
 | Real-Time Sync | Socket.IO + DomainEventBus, auto-emit on mutations | `RealtimeGateway` + `domainEventBus`, same auto-emit |
 | JWT Auth (Keycloak) | JWKS verification middleware | `JwtAuthGuard` with JWKS verification |
-| Role-Based Access | `authorize('admin')` middleware | `@Roles('admin')` decorator + `RolesGuard` |
+| Authorization | `authorize('admin')` middleware | `@RequirePermission()` (pure ABAC) + `@Roles()` (area-level only) |
 | Pagination | `parsePaginationFromQuery()` → `PaginatedResult<T>` | Query params → `PaginationOptions` → `PaginatedResult<T>` |
 | API Portal | Express app fetching/merging Swagger specs | Express app with service dropdown + reverse proxy |
 | Database Migrations | Knex.js migrations per service | Same — Knex.js migrations per service |
@@ -138,8 +138,8 @@ All features from the original architecture were re-implemented in NestJS:
 BACKEND/ (Nx + pnpm workspace)
 ├── apps/
 │   ├── user-service/         Clean Architecture (4 layers), port 3001, DB: user_service_db
-│   ├── shared-db-example/    Clean Architecture (4 layers), port 3005, DB: master_db
-│   └── api-portal/           Swagger aggregator + reverse proxy, port 4000
+│   ├── auth-service/         Clean Architecture (4 layers), port 3002, DB: auth_db
+│   └── api-portal/            Swagger aggregator + reverse proxy, port 4000
 ├── libs/
 │   ├── domain/               BaseEntity, IBaseRepository, PaginationOptions
 │   ├── api/                  MessageCode, ApiResponse, Exceptions

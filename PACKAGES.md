@@ -195,15 +195,19 @@ The top-level shared library. Provides all cross-cutting concerns: authenticatio
 |---|---|---|
 | `JwtAuthGuard` | NestJS Guard | Validates JWT Bearer tokens via Keycloak JWKS endpoint |
 | `RolesGuard` | NestJS Guard | Checks `@Roles()` decorator against `realm_access.roles` from JWT |
-| `AuthModule` | NestJS Module | Registers `JwtAuthGuard` (global) + `RolesGuard` (global) |
+| `PermissionsGuard` | NestJS Guard | Checks `@RequirePermission()` against auth-service permissions (cached, with ABAC evaluation) |
+| `AuthModule` | NestJS Module | Registers `JwtAuthGuard` + `RolesGuard` + `PermissionsGuard` (all global) |
 | `@Public()` | Decorator | Marks a route as public (skips JWT validation) |
-| `@Roles(...roles)` | Decorator | Requires specific realm roles (e.g., `@Roles('admin')`) |
+| `@Roles(...roles)` | Decorator | Area-level role gate — restricts entire controllers (e.g., `@Roles('super-admin')`). Do NOT use on individual CRUD methods. |
+| `@RequirePermission(key)` | Decorator | Requires specific permission key (e.g., `@RequirePermission('user-management.users.create')`) |
+| `PermissionCache` | Class | In-memory cache for resolved permissions (5-min TTL, role-combo keyed) |
+| `AbacEvaluator` | Class | Evaluates ABAC conditions (tenant_isolation, ownership_only, department, time_window, custom_rules) |
 
 ### Exports — Request Context
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `RequestContext` | Interface | `{ requestId, userId, userEmail, roles, tenantId, timestamp }` |
+| `RequestContext` | Interface | `{ requestId, userId, userEmail, roles, tenantId, timestamp, abacFilters? }` |
 | `ContextInterceptor` | NestJS Interceptor | Extracts JWT claims → populates `AsyncLocalStorage` context for the request |
 | `getContext()` | Function | Get current request context (throws if none) |
 | `getContextOrNull()` | Function | Get current request context or `null` |
@@ -215,7 +219,7 @@ The top-level shared library. Provides all cross-cutting concerns: authenticatio
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `BaseRepository<T>` | Class | Generic Knex-based repository with CRUD, pagination, search, auto audit fields (`createdBy`, `modifiedBy` from context), auto domain event emission |
+| `BaseRepository<T>` | Class | Generic Knex-based repository with CRUD, pagination, search, auto audit fields (`createdBy`, `modifiedBy` from context), ABAC filter enforcement, auto domain event emission |
 
 ### Exports — Real-Time
 
@@ -237,7 +241,7 @@ The top-level shared library. Provides all cross-cutting concerns: authenticatio
 
 ```typescript
 // In a controller
-import { Roles, getContext } from '@cargoez/infrastructure';
+import { RequirePermission, getContext } from '@cargoez/infrastructure';
 
 @Controller('users')
 export class UsersController {
@@ -248,9 +252,10 @@ export class UsersController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermission('user-management.users.create')
   async create(@Body() dto: CreateUserDto) {
     // createdBy/modifiedBy are auto-populated by BaseRepository from RequestContext
+    // ABAC filters are auto-applied by BaseRepository from PermissionsGuard
     return this.createUser.execute(dto);
   }
 }
@@ -266,7 +271,7 @@ export class UserRepository extends BaseRepository<User> {
     super(knex, 'users'); // table name
   }
   // Inherits: findAll, findById, save, update, delete
-  // Auto: audit fields, domain events, pagination, search
+  // Auto: audit fields, domain events, pagination, search, ABAC filters
 }
 ```
 
@@ -297,4 +302,5 @@ export class UserRepository extends BaseRepository<User> {
 - [README.md](./README.md) — Project overview, how to run, quick reference
 - [DEVELOPMENT.md](./DEVELOPMENT.md) — Full development guide, adding new services, coding conventions
 - [AUTHENTICATION.md](./AUTHENTICATION.md) — Keycloak setup, OAuth flows, PKCE, token management
+- [RBAC-ABAC.md](./RBAC-ABAC.md) — RBAC + ABAC permission system, auth-service APIs, ABAC conditions
 - [ERROR_CODES.md](./ERROR_CODES.md) — Message codes and error response reference

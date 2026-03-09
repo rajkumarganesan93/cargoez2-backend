@@ -1,7 +1,7 @@
 import { resolve } from 'path';
 import { config } from 'dotenv';
 
-config({ path: resolve(__dirname, '../../.env') });
+config({ path: resolve(process.cwd(), '../../.env') });
 
 const knexConfig = {
   client: 'pg',
@@ -13,7 +13,7 @@ const knexConfig = {
     database: process.env['USER_SERVICE_DB_NAME'] || process.env['DB_NAME'] || 'cargoez',
   },
   migrations: {
-    directory: resolve(__dirname, 'migrations'),
+    directory: resolve(process.cwd(), 'migrations'),
     extension: 'ts',
   },
 };

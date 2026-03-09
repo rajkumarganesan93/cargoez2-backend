@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags, ApiQuery } from '@nestjs/swagger';
 import { createSuccessResponse, MessageCode } from '@cargoez/api';
-import { Roles, getContext } from '@cargoez/infrastructure';
+import { RequirePermission, getContext } from '@cargoez/infrastructure';
 import { GetAllUsersUseCase } from '../../application/use-cases/get-all-users.use-case';
 import { GetUserByIdUseCase } from '../../application/use-cases/get-user-by-id.use-case';
 import { CreateUserUseCase } from '../../application/use-cases/create-user.use-case';
@@ -70,21 +70,21 @@ export class UsersController {
   }
 
   @Post()
-  @Roles('admin')
+  @RequirePermission('user-management.users.create')
   async create(@Body() dto: CreateUserDto) {
     const user = await this.createUser.execute(dto);
     return createSuccessResponse(MessageCode.CREATED, user);
   }
 
   @Put(':id')
-  @Roles('admin')
+  @RequirePermission('user-management.users.update')
   async update(@Param('id') id: string, @Body() dto: UpdateUserDto) {
     const user = await this.updateUser.execute(id, dto);
     return createSuccessResponse(MessageCode.UPDATED, user);
   }
 
   @Delete(':id')
-  @Roles('admin')
+  @RequirePermission('user-management.users.delete')
   async remove(@Param('id') id: string) {
     await this.deleteUser.execute(id);
     return createSuccessResponse(MessageCode.DELETED, null);

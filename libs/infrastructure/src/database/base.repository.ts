@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
 import { BaseEntity, IBaseRepository, PaginationOptions, PaginatedResult } from '@cargoez/domain';
-import { getCurrentUserIdOrNull, getCurrentTenantIdOrNull } from '../context/request-context';
+import { getCurrentUserIdOrNull, getCurrentTenantIdOrNull, getContextOrNull } from '../context/request-context';
 import { domainEventBus } from '../events/domain-event-bus';
 
 export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepository<T> {
@@ -45,6 +45,20 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
     return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
   }
 
+  protected getAbacFilters(): Record<string, any> | undefined {
+    const ctx = getContextOrNull();
+    return ctx?.abacFilters;
+  }
+
+  protected applyAbacFilters(query: Knex.QueryBuilder): Knex.QueryBuilder {
+    const filters = this.getAbacFilters();
+    if (!filters) return query;
+    for (const [col, val] of Object.entries(filters)) {
+      query = query.where(col, val);
+    }
+    return query;
+  }
+
   async findAll(options: PaginationOptions = {}): Promise<PaginatedResult<T>> {
     const { page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'desc', search, searchFields } = options;
     const offset = (page - 1) * limit;
@@ -52,6 +66,9 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
 
     let query = this.knex(this.table);
     let countQuery = this.knex(this.table).count('* as total');
+
+    query = this.applyAbacFilters(query);
+    countQuery = this.applyAbacFilters(countQuery);
 
     if (search && searchFields && searchFields.length > 0) {
       const searchFilter = (builder: Knex.QueryBuilder) => {
@@ -96,7 +113,9 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
 
   async update(id: string, entity: Partial<T>): Promise<T> {
     const mapped = this.mapToDb(entity as Record<string, any>, false);
-    const [row] = await this.knex(this.table).where('id', id).update(mapped).returning('*');
+    let query = this.knex(this.table).where('id', id);
+    query = this.applyAbacFilters(query);
+    const [row] = await query.update(mapped).returning('*');
     if (!row) throw new Error(`Entity not found: ${id}`);
     const result = this.mapFromDb(row);
     this.emitEvent('updated', result);
@@ -104,7 +123,9 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
   }
 
   async delete(id: string): Promise<void> {
-    const deleted = await this.knex(this.table).where('id', id).del();
+    let query = this.knex(this.table).where('id', id);
+    query = this.applyAbacFilters(query);
+    const deleted = await query.del();
     if (!deleted) throw new Error(`Entity not found: ${id}`);
     this.emitEvent('deleted', { id } as unknown as T);
   }

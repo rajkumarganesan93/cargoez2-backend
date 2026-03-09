@@ -50,8 +50,8 @@
                           │ JWT (access_token)│                  │
                           ▼                  ▼                  ▼
                   ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-                  │ user-service │  │ shared-db-   │  │   future     │
-                  │  :3001       │  │ example :3005│  │  services    │
+                  │ user-service │  │ auth-service │  │   future     │
+                  │  :3001       │  │  :3002       │  │  services    │
                   │              │  │              │  │              │
                   │ ┌──────────┐ │  │ ┌──────────┐ │  │ ┌──────────┐ │
                   │ │JWKS      │ │  │ │JWKS      │ │  │ │JWKS      │ │
@@ -187,30 +187,34 @@ The `cargoez` realm has 4 pre-configured clients, each for a specific use case:
 
 ### Realm Roles
 
+Keycloak realm roles provide **identity** — they tell the system who the user is. Authorization decisions are made by the auth-service ABAC database, which maps these roles to granular permissions.
+
 | Role | Description |
 |------|-------------|
-| `admin` | Full CRUD access — can create, read, update, and delete all resources |
-| `manager` | Manager access — can read and update (no create or delete) |
-| `user` | Standard access — read-only operations |
+| `admin` | Full CRUD access — all permissions on all modules (with tenant isolation) |
+| `manager` | Read + Update access — no create or delete (with tenant isolation) |
+| `user` | Read-only access — view operations on all modules (with tenant isolation) |
 
 ### Pre-configured Test Users
 
-| Username | Password | Roles | API Permissions |
-|----------|----------|-------|-----------------|
-| `admin` | `admin123` | `admin`, `user` | GET, POST, PUT, DELETE on all endpoints |
-| `manager` | `manager123` | `manager`, `user` | GET, PUT only |
-| `testuser` | `test123` | `user` | GET only (read-only) |
+| Username | Password | Keycloak Roles | Effective ABAC Permissions |
+|----------|----------|----------------|----------------------------|
+| `admin` | `admin123` | `admin`, `user` | Full CRUD on all modules (44 permissions) |
+| `manager` | `manager123` | `manager`, `user` | Read + Update on all modules (22 permissions) |
+| `testuser` | `test123` | `user` | Read-only on all modules (11 permissions) |
 
 ### Route Protection Matrix (user-service example)
 
-| Endpoint | Method | Required Role | admin | manager | testuser |
-|----------|--------|--------------|-------|---------|----------|
-| `/health` | GET | None (public) | Yes | Yes | Yes |
-| `/users` | GET | Any authenticated | Yes | Yes | Yes |
-| `/users/:id` | GET | Any authenticated | Yes | Yes | Yes |
-| `/users` | POST | `admin` | Yes | **403** | **403** |
-| `/users/:id` | PUT | `admin` or `manager` | Yes | Yes | **403** |
-| `/users/:id` | DELETE | `admin` | Yes | **403** | **403** |
+Authorization is controlled by `@RequirePermission()` decorators backed by the auth-service ABAC database. See [RBAC-ABAC.md](RBAC-ABAC.md) for full details.
+
+| Endpoint | Method | Permission Required | admin | manager | testuser |
+|----------|--------|---------------------|-------|---------|----------|
+| `/health` | GET | None (`@Public`) | Yes | Yes | Yes |
+| `/users` | GET | None (any authenticated) | Yes | Yes | Yes |
+| `/users/:id` | GET | None (any authenticated) | Yes | Yes | Yes |
+| `/users` | POST | `user-management.users.create` | Yes | **403** | **403** |
+| `/users/:id` | PUT | `user-management.users.update` | Yes | Yes | **403** |
+| `/users/:id` | DELETE | `user-management.users.delete` | Yes | **403** | **403** |
 
 ---
 
@@ -850,7 +854,7 @@ Authentication is provided by `@cargoez/infrastructure`. No backend code changes
 
 ### AuthModule
 
-Automatically registers `JwtAuthGuard` (global) and `RolesGuard` (global) when imported in `AppModule`:
+Automatically registers `JwtAuthGuard` (global), `RolesGuard` (global), and `PermissionsGuard` (global) when imported in `AppModule`:
 
 ```typescript
 // app.module.ts
@@ -859,12 +863,20 @@ import { AuthModule, RealtimeModule } from '@cargoez/infrastructure';
 @Module({
   imports: [
     DatabaseModule.forRoot({ connectionPrefix: 'USER_SERVICE' }),
-    AuthModule,      // ← Global JWT + Roles guards
+    AuthModule,      // ← Global JWT + Roles + Permissions guards
     RealtimeModule,
   ],
 })
 export class AppModule {}
 ```
+
+### Guard Execution Order
+
+Every request passes through three global guards in this order:
+
+1. **JwtAuthGuard** — Validates JWT token via Keycloak JWKS; skipped on `@Public()` routes
+2. **RolesGuard** — Checks `@Roles()` decorator if present (area-level gate); no-op if absent
+3. **PermissionsGuard** — Checks `@RequirePermission()` decorator; resolves ABAC permissions from auth-service (cached 5 min); evaluates conditions; attaches `request.abacFilters`
 
 ### JwtAuthGuard
 
@@ -880,23 +892,37 @@ import { Public } from '@cargoez/infrastructure';
 health() { ... }
 ```
 
-### @Roles() Decorator
+### @RequirePermission() Decorator (Primary Authorization)
 
-Per-route role enforcement:
+`@RequirePermission()` is the primary authorization mechanism for all business operations. The auth-service ABAC database is the single source of truth for who can do what.
+
+```typescript
+import { RequirePermission } from '@cargoez/infrastructure';
+
+@Post()
+@RequirePermission('user-management.users.create')
+async create(@Body() dto) { ... }
+
+@Put(':id')
+@RequirePermission('user-management.users.update')
+async update(@Param('id') id) { ... }
+
+@Get()
+async findAll() { ... }           // Any authenticated user (no decorator)
+```
+
+The `PermissionsGuard` extracts the user's Keycloak roles from the JWT, calls `/resolve-permissions?roles=...` on auth-service, checks if the resolved set contains the required permission key, evaluates ABAC conditions (tenant isolation, ownership, etc.), and attaches filters to the request context. See [RBAC-ABAC.md](RBAC-ABAC.md) for full documentation.
+
+### @Roles() Decorator (Area-Level Only)
+
+`@Roles()` is reserved for **area-level segregation** — entire controllers that only certain user types should ever access. It should NOT be used on individual CRUD methods (that's what `@RequirePermission` is for).
 
 ```typescript
 import { Roles } from '@cargoez/infrastructure';
 
-@Post()
-@Roles('admin')                    // Only admin can create
-async create(@Body() dto) { ... }
-
-@Put(':id')
-@Roles('admin', 'manager')        // Admin OR manager can update
-async update(@Param('id') id) { ... }
-
-@Get()
-async findAll() { ... }           // Any authenticated user (no @Roles)
+@Controller('system/diagnostics')
+@Roles('super-admin')  // Only super-admin can access this entire area
+export class DiagnosticsController { ... }
 ```
 
 ### Request Context
@@ -914,11 +940,11 @@ const ctx = getContext();
 
 ## 15. Route Protection Reference
 
-### Pattern (NestJS Decorators)
+### Pattern (NestJS Decorators — Pure ABAC)
 
 ```typescript
 import { Controller, Get, Post, Put, Delete } from '@nestjs/common';
-import { Public, Roles } from '@cargoez/infrastructure';
+import { Public, RequirePermission } from '@cargoez/infrastructure';
 
 @Controller('users')
 export class UsersController {
@@ -933,22 +959,38 @@ export class UsersController {
   getMe() { ... }
 
   @Post()
-  @Roles('admin')                    // Admin only
+  @RequirePermission('user-management.users.create')   // ABAC-controlled
   create(@Body() dto) { ... }
 
   @Put(':id')
-  @Roles('admin')                    // Admin only
+  @RequirePermission('user-management.users.update')   // ABAC-controlled
   update(@Param('id') id, @Body() dto) { ... }
 
   @Delete(':id')
-  @Roles('admin')                    // Admin only
+  @RequirePermission('user-management.users.delete')   // ABAC-controlled
   remove(@Param('id') id) { ... }
 }
 ```
 
-### How Role Checking Works
+### How Permission Checking Works
 
-`@Roles('admin', 'manager')` means the user must have **at least one** of those roles (OR logic, not AND). Roles are read from the JWT's `realm_access.roles` claim.
+`@RequirePermission('module.screen.operation')` triggers the `PermissionsGuard` which:
+1. Extracts the user's Keycloak realm roles from the JWT (`realm_access.roles`)
+2. Calls `auth-service/resolve-permissions?roles=admin,user` to get the permission set
+3. Checks if the required permission key exists in the resolved set
+4. Evaluates any ABAC conditions (tenant isolation, ownership, time window, etc.)
+5. If conditions produce filters, attaches them to `request.abacFilters` for `BaseRepository`
+
+Results are cached for 5 minutes per unique role combination.
+
+### When to Use @Roles() vs @RequirePermission()
+
+| Decorator | Use Case | Example |
+|-----------|----------|---------|
+| `@RequirePermission()` | All business CRUD operations | `@RequirePermission('user-management.users.create')` |
+| `@Roles()` | Area-level segregation (entire controller) | `@Roles('super-admin')` on a diagnostics controller |
+| `@Public()` | Skip authentication entirely | Health checks, public endpoints |
+| _(none)_ | Any authenticated user | Read/list endpoints |
 
 ---
 
@@ -1080,9 +1122,10 @@ API_URL=http://localhost:3001
 
 1. **Never store or log tokens** — they are sensitive credentials
 2. **Always validate tokens server-side** — never trust the client
-3. **Use `@Roles()` on write endpoints** — even if the frontend hides buttons
+3. **Use `@RequirePermission()` on all write endpoints** — even if the frontend hides buttons. The auth-service ABAC database is the single source of truth for authorization
 4. **Keep `KEYCLOAK_AUDIENCE` set** — prevents tokens from other clients being used
 5. **CORS is configured with an explicit origin whitelist** — only allowed frontend origins can make API calls (no wildcard `*`)
+6. **Do not use `@Roles()` on individual CRUD methods** — use `@RequirePermission()` instead. Reserve `@Roles()` for area-level controller gates only
 
 ### For Frontend Developers
 
@@ -1114,7 +1157,7 @@ API_URL=http://localhost:3001
 ### "403 Forbidden" when calling an endpoint
 
 1. **Check user roles:** decode the JWT at [jwt.io](https://jwt.io) and look at `realm_access.roles`
-2. **Check route requirements:** look at `@Roles('admin')` in the controller
+2. **Check route requirements:** look at `@RequirePermission('...')` in the controller, and verify the user's role has that permission assigned in auth-service
 3. **Try with admin user:** get a token with `username=admin&password=admin123`
 
 ### Token request returns error
