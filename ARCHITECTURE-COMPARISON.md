@@ -137,17 +137,20 @@ All features from the original architecture were re-implemented in NestJS:
 ```
 BACKEND/ (Nx + pnpm workspace)
 ├── apps/
-│   ├── user-service/         Clean Architecture (4 layers), port 3001, DB: user_service_db
-│   ├── auth-service/         Clean Architecture (4 layers), port 3002, DB: auth_db
+│   ├── admin-service/         Central management (port 3001, DB: admin_db + tenant DBs)
+│   ├── freight-service/       Freight operations (port 3002, tenant DBs via TenantConnectionManager)
+│   ├── contacts-service/      Contact management (port 3003, tenant DBs via TenantConnectionManager)
+│   ├── books-service/         Books/accounting (port 3004, tenant DBs via TenantConnectionManager)
 │   └── api-portal/            Swagger aggregator + reverse proxy, port 4000
 ├── libs/
-│   ├── domain/               BaseEntity, IBaseRepository, PaginationOptions
+│   ├── domain/               BaseEntity, IBaseRepository, PaginationOptions, RequestContext
 │   ├── api/                  MessageCode, ApiResponse, Exceptions
-│   ├── shared/               DatabaseModule (Knex)
-│   └── infrastructure/       Auth, Context, BaseRepository, Realtime, Logger, Filter
+│   ├── shared/               DatabaseModule, TenantDatabaseModule, TenantConnectionManager
+│   └── infrastructure/       Auth guards, BaseRepository, TenantBaseRepository, Realtime, Logger
 ├── keycloak/
-│   └── cargoez-realm.json    Realm config (4 clients, 3 users, 3 roles)
-└── .env                      Per-service database names, Keycloak config
+│   └── cargoez-realm.json    Realm config (2 clients, multi-tenant users, 4 realm roles)
+├── scripts/                   Setup and doc generation scripts
+└── .env                      Database config, Keycloak config, service ports
 ```
 
 ---

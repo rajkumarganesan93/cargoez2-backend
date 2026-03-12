@@ -127,7 +127,7 @@ interface ApiResponse<T = any> {
 
 **Thrown by:**
 - `JwtAuthGuard` → `UNAUTHORIZED` (missing or invalid token)
-- `RolesGuard` → `FORBIDDEN` (user lacks required `@Roles()`)
+- `PermissionsGuard` → `FORBIDDEN` (user lacks required `@RequirePermission()`)
 
 ### Example — Unauthorized
 

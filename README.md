@@ -1,6 +1,6 @@
 # CargoEz Backend
 
-Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreSQL, **Clean Architecture**, and **Keycloak** authentication.
+Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreSQL, **Clean Architecture**, and **Keycloak** authentication. Multi-tenant SaaS with centralized admin management and per-tenant database isolation.
 
 ## Tech Stack
 
@@ -21,30 +21,147 @@ Node.js microservices monorepo built with **Nx**, **NestJS**, **pnpm**, PostgreS
 
 ---
 
+## Architecture Overview
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                     Frontend Portals                                │
+│  admin.cargoez.com (SysAdmin)        app.cargoez.com (Tenant)      │
+└──────────┬───────────────────────────────────┬─────────────────────┘
+           │                                   │
+           ▼                                   ▼
+┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
+│ admin-service    │  │ freight-service  │  │ contacts-service │  │ books-service    │
+│ :3001            │  │ :3002            │  │ :3003            │  │ :3004            │
+│                  │  │                  │  │                  │  │                  │
+│ admin_db (24 tbl)│  │ tenant DBs only  │  │ tenant DBs only  │  │ tenant DBs only  │
+│ + tenant DBs     │  │ (via TenantConn  │  │ (via TenantConn  │  │ (via TenantConn  │
+│ (access control) │  │  Manager)        │  │  Manager)        │  │  Manager)        │
+└────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘  └────────┬─────────┘
+         │                     │                      │                     │
+         ▼                     ▼                      ▼                     ▼
+┌──────────────────────────────────────────────────────────────────────────────────────┐
+│  Shared Libraries: @cargoez/domain  @cargoez/api  @cargoez/shared  @cargoez/infra   │
+└──────────────────────────────────────────────────────────────────────────────────────┘
+         │                                                          │
+┌────────▼───────────────────────────────────┐   ┌──────────────────▼──┐
+│  PostgreSQL :5432                           │   │  Keycloak :8080     │
+│  ┌──────────┐ ┌──────────┐ ┌─────────────┐ │   │  cargoez realm      │
+│  │ admin_db │ │shared_db │ │tenant_XXX_db│ │   │  ├─ cargoez-admin   │
+│  │ (central)│ │ (shared) │ │ (per tenant)│ │   │  └─ cargoez-web     │
+│  └──────────┘ └──────────┘ └─────────────┘ │   └─────────────────────┘
+└────────────────────────────────────────────┘
+```
+
+### Services
+
+| Service | Port | Database(s) | Responsibility |
+|---|---|---|---|
+| `admin-service` | 3001 | `admin_db` + tenant DBs (`shared_db` / `{tenant_code}_db`) | Central management, tenant provisioning, user identity, resolve-context, access control |
+| `freight-service` | 3002 | Tenant DBs only (via `TenantConnectionManager`) | Freight / shipment operations |
+| `contacts-service` | 3003 | Tenant DBs only (via `TenantConnectionManager`) | Contact management |
+| `books-service` | 3004 | Tenant DBs only (via `TenantConnectionManager`) | Books / accounting |
+| `api-portal` | 4000 | — | Swagger aggregator + reverse proxy gateway |
+
+### Key Principles
+
+- **Multi-tenant SaaS**: Per-tenant database isolation with centralized admin
+- **Clean Architecture**: 4-layer separation (Domain -> Application -> Infrastructure -> Presentation)
+- **Single resolve-context endpoint**: One internal HTTP call resolves user identity, DB connection, and permissions
+- **Pure ABAC**: Keycloak for authentication, attribute-based access control for authorization
+- **Convention over Configuration**: All services follow identical structure and patterns
+
+---
+
+## Database Strategy
+
+### Three Database Types
+
+| Database | Owner | Contents |
+|---|---|---|
+| `admin_db` | `admin-service` | 24 tables: tenants, branches, sys_admins, app_customers, admin roles/permissions, subscriptions, products, metadata |
+| `shared_db` | All tenant services | Shared multi-tenant database for normal tenants (10 tables) |
+| `{tenant_code}_db` | All tenant services | Dedicated database for enterprise tenants (same 10-table schema as shared_db) |
+
+### How Services Connect
+
+- **admin-service** connects to `admin_db` directly for central management, and to tenant DBs for access control lookups during resolve-context
+- **freight-service / contacts-service / books-service** connect only to tenant DBs via `TenantConnectionManager`, which resolves the correct database from the request context
+
+### BaseEntity
+
+Every table extends a standard 7-column base:
+
+| Column | Type | Description |
+|---|---|---|
+| `uid` | UUID (PK) | Primary key |
+| `tenant_uid` | UUID | Tenant identifier |
+| `is_active` | boolean | Soft-delete flag |
+| `created_at` | timestamp | Record creation time |
+| `modified_at` | timestamp | Last modification time |
+| `created_by` | UUID | User who created the record |
+| `modified_by` | UUID | User who last modified the record |
+
+---
+
+## Authentication & Authorization
+
+### Keycloak (Authentication)
+
+Two Keycloak clients in the `cargoez` realm:
+
+| Client ID | Purpose | Grant Type |
+|---|---|---|
+| `cargoez-admin` | SysAdmin portal (`admin.cargoez.com`) | Auth Code + PKCE |
+| `cargoez-web` | Tenant portal (`app.cargoez.com`) | Auth Code + PKCE |
+
+### Realm Roles
+
+| Role | Description |
+|---|---|
+| `sys_admin` | System administrator (full platform access) |
+| `tenant_admin` | Tenant administrator (full tenant access) |
+| `app_customer` | Standard application user |
+| `branch_customer` | Branch-level user |
+
+### Pure ABAC (Authorization)
+
+Permission keys follow the format `module.operation` (e.g., `freight.create`, `contacts.update`).
+
+**Guard pipeline (every request):**
+
+1. **JwtAuthGuard** — Validates JWT via Keycloak JWKS
+2. **ContextInterceptor** — Calls `admin-service /internal/resolve-context` once per request (cached 5 min). Resolves: user identity, tenant DB connection, permissions
+3. **PermissionsGuard** — Reads permissions from `RequestContext` (no HTTP call). Checks `@RequirePermission('module.operation')`
+
+> See [AUTHENTICATION.md](AUTHENTICATION.md) for full details and [RBAC-ABAC.md](RBAC-ABAC.md) for the ABAC permission model.
+
+---
+
 ## Project Structure
 
 ```
 BACKEND/
-├── apps/                                # Independently deployable NestJS services
-│   ├── user-service/                    # User management CRUD (port 3001)
+├── apps/
+│   ├── admin-service/                   # Central management (port 3001)
 │   │   └── src/
 │   │       ├── domain/                  # Pure interfaces (entities, repository contracts)
 │   │       ├── application/             # Use cases (business logic)
 │   │       ├── infrastructure/          # Concrete implementations (Knex repositories)
 │   │       ├── presentation/            # Controllers, DTOs, NestJS module wiring
-│   │       ├── app.module.ts            # Root module
-│   │       └── main.ts                  # Bootstrap
-│   ├── auth-service/                    # RBAC + ABAC permission management (port 3002)
-│   │   └── src/                         # Same Clean Architecture layers as above
-│   └── api-portal/                      # Swagger UI aggregator + reverse proxy (port 4000)
+│   │       ├── app.module.ts
+│   │       └── main.ts
+│   ├── freight-service/                 # Freight operations (port 3002)
+│   ├── contacts-service/               # Contact management (port 3003)
+│   └── books-service/                  # Books / accounting (port 3004)
 │
 ├── libs/                                # Shared libraries (imported as @cargoez/*)
 │   ├── domain/                          # BaseEntity, IBaseRepository, PaginationOptions
 │   ├── api/                             # MessageCode, MessageCatalog, ApiResponse, exceptions
-│   ├── shared/                          # DatabaseModule (Knex provider), @InjectKnex()
-│   └── infrastructure/                  # Auth guards, permissions guard, ABAC evaluator,
-│                                        #   request context, BaseRepository,
-│                                        #   realtime gateway, logger, exception filter
+│   ├── shared/                          # DatabaseModule, TenantConnectionManager, @InjectKnex()
+│   └── infrastructure/                  # Auth guards, PermissionsGuard, ABAC evaluator,
+│                                        #   RequestContext, ContextInterceptor, BaseRepository,
+│                                        #   TenantBaseRepository, realtime gateway, logger
 │
 ├── keycloak/
 │   └── cargoez-realm.json               # Keycloak realm config (clients, users, roles)
@@ -54,11 +171,11 @@ BACKEND/
 ├── tsconfig.base.json                   # Shared TypeScript config with path aliases
 ├── .env.example                         # Environment variable template
 │
+├── DEVELOPMENT.md                       # Development guide & coding conventions
+├── AUTHENTICATION.md                    # Keycloak setup, multi-tenant auth flow
+├── RBAC-ABAC.md                         # ABAC permission system documentation
 ├── PACKAGES.md                          # Shared libraries reference & exports
-├── DEVELOPMENT.md                       # Full development guide & coding conventions
-├── AUTHENTICATION.md                    # Keycloak setup, OAuth/PKCE, token management
-├── ERROR_CODES.md                       # Message codes & error response reference
-└── ARCHITECTURE-COMPARISON.md           # Express → NestJS migration analysis
+└── ERROR_CODES.md                       # Message codes & error response reference
 ```
 
 ---
@@ -82,11 +199,12 @@ pnpm install
 
 ### Step 2 — Create databases
 
-Each microservice uses its own database. Connect to PostgreSQL and create them:
+Connect to PostgreSQL and create the required databases:
 
 ```sql
-CREATE DATABASE user_service_db;
-CREATE DATABASE auth_db;
+CREATE DATABASE admin_db;
+CREATE DATABASE shared_db;
+-- Per-tenant databases are created during tenant provisioning
 ```
 
 ### Step 3 — Configure environment
@@ -98,45 +216,38 @@ cp .env.example .env
 Edit `.env` with your actual values:
 
 ```env
-# Default database connection (used when per-service vars are not set)
+# Database connection
 DB_HOST=localhost
 DB_PORT=5432
 DB_USER=postgres
 DB_PASSWORD="your_password_here"
 
-# User Service database (prefix: USER_SERVICE)
-USER_SERVICE_DB_NAME=user_service_db
-# USER_SERVICE_DB_HOST=some-other-host     # uncomment to override defaults
-# USER_SERVICE_DB_PORT=5432
-# USER_SERVICE_DB_USER=user_svc_user
-# USER_SERVICE_DB_PASSWORD="secret"
+# Admin Service database
+ADMIN_SERVICE_DB_NAME=admin_db
 
-# Auth Service database (prefix: AUTH_SERVICE)
-AUTH_SERVICE_DB_NAME=auth_db
-# AUTH_SERVICE_DB_HOST=localhost
-# AUTH_SERVICE_DB_PORT=5432
-# AUTH_SERVICE_DB_USER=auth_user
-# AUTH_SERVICE_DB_PASSWORD="secret"
+# Shared tenant database
+SHARED_DB_NAME=shared_db
 
 # Keycloak
 KEYCLOAK_URL=http://localhost:8080
 KEYCLOAK_REALM=cargoez
+KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
 
-# Services (optional port overrides)
-USER_SERVICE_PORT=3001
-AUTH_SERVICE_PORT=3002
-API_PORTAL_PORT=4000
+# Service ports
+ADMIN_SERVICE_PORT=3001
+FREIGHT_SERVICE_PORT=3002
+CONTACTS_SERVICE_PORT=3003
+BOOKS_SERVICE_PORT=3004
+
+# Internal service URLs (for resolve-context calls)
+ADMIN_SERVICE_URL=http://localhost:3001
 ```
 
-> **Note:** If your password contains special characters (e.g., `#`, `$`), wrap it in double quotes.
->
-> Each service reads `{PREFIX}_DB_HOST`, `{PREFIX}_DB_PORT`, etc. If not set, it falls back to the shared `DB_*` values. This allows services to use completely different database servers when needed.
-
-### Step 4 — Run database migrations
+### Step 4 — Run database migrations and seed
 
 ```bash
-pnpm migrate:user      # Creates tables in user_service_db
-pnpm migrate:auth      # Creates permission tables + seed data in auth_db
+pnpm migrate:admin      # Creates 20 tables in admin_db + seed data
+pnpm migrate:shared     # Creates shared reference tables in shared_db
 ```
 
 ### Step 5 — Build everything
@@ -145,19 +256,11 @@ pnpm migrate:auth      # Creates permission tables + seed data in auth_db
 pnpm build
 ```
 
-Nx builds all 4 libraries and 3 applications in dependency order with intelligent caching.
+Nx builds all libraries and applications in dependency order with intelligent caching.
 
 ### Step 6 — Start Keycloak
 
-**Option A — Standalone (Java/OpenJDK 21)**
-
-```bash
-# Download Keycloak from https://www.keycloak.org/downloads
-copy keycloak\cargoez-realm.json <keycloak-dir>\data\import\cargoez-realm.json
-<keycloak-dir>\bin\kc.bat start-dev --import-realm
-```
-
-**Option B — Docker**
+**Option A — Docker**
 
 ```bash
 docker run -d --name keycloak \
@@ -168,13 +271,12 @@ docker run -d --name keycloak \
   quay.io/keycloak/keycloak:26.1.0 start-dev --import-realm
 ```
 
-**Pre-configured users:**
+**Option B — Standalone (Java/OpenJDK 21)**
 
-| Username | Password | Roles | Purpose |
-|---|---|---|---|
-| `admin` | `admin123` | `admin`, `user` | Full access to all APIs |
-| `testuser` | `test123` | `user` | Read-only access |
-| `manager` | `manager123` | `manager`, `user` | Mid-level access |
+```bash
+copy keycloak\cargoez-realm.json <keycloak-dir>\data\import\cargoez-realm.json
+<keycloak-dir>\bin\kc.bat start-dev --import-realm
+```
 
 **Keycloak Admin Console:** http://localhost:8080/admin (login: `admin` / `admin`)
 
@@ -185,124 +287,22 @@ docker run -d --name keycloak \
 pnpm start:all
 
 # Or individually
-pnpm start:user       # User Service on :3001
-pnpm start:auth       # Auth Service on :3002
-pnpm start:portal     # API Portal on :4000
-
-# Or direct node (after build)
-pnpm dev:user
-pnpm dev:auth
-pnpm dev:portal
+pnpm start:admin        # Admin Service on :3001
+pnpm start:freight      # Freight Service on :3002
+pnpm start:contacts     # Contacts Service on :3003
+pnpm start:books        # Books Service on :3004
 ```
 
 ### Step 8 — Verify
 
 | Service | URL | Description |
 |---|---|---|
-| **API Portal** | **http://localhost:4000/api-docs** | **Swagger UI with service selector dropdown** |
-| User Service — Swagger | http://localhost:3001/user-service/api-docs | User Service API docs |
-| User Service — Health | http://localhost:3001/user-service/health | Health check |
-| Auth Service — Swagger | http://localhost:3002/auth-service/api-docs | Auth Service API docs |
-| Auth Service — Health | http://localhost:3002/auth-service/health | Health check |
+| Admin Service — Swagger | http://localhost:3001/admin-service/api-docs | Admin Service API docs |
+| Admin Service — Health | http://localhost:3001/admin-service/health | Health check |
+| Freight Service — Swagger | http://localhost:3002/freight-service/api-docs | Freight API docs |
+| Contacts Service — Swagger | http://localhost:3003/contacts-service/api-docs | Contacts API docs |
+| Books Service — Swagger | http://localhost:3004/books-service/api-docs | Books API docs |
 | Keycloak | http://localhost:8080 | Identity provider |
-
----
-
-## Microservices
-
-| Service | Port | Database | Global Prefix | Description |
-|---|---|---|---|---|
-| `user-service` | 3001 | `user_service_db` | `/user-service` | User CRUD, `/users/me` |
-| `auth-service` | 3002 | `auth_db` | `/auth-service` | RBAC + ABAC permission management |
-| `api-portal` | 4000 | — | — | Swagger aggregator + reverse proxy |
-
-Each service is a standalone NestJS application with its own database, Swagger docs, and WebSocket gateway. Services can be deployed and scaled independently.
-
-### API Portal
-
-The API Portal at `http://localhost:4000/api-docs` provides:
-
-- **Service selector dropdown** — pick which microservice's API to view
-- **Reverse proxy** — "Try it out" calls are proxied to the correct service
-- **Live specs** — each service's OpenAPI spec is fetched in real-time
-
-All API calls through the portal are transparently forwarded:
-- `http://localhost:4000/user-service/*` → `http://localhost:3001/user-service/*`
-- `http://localhost:4000/auth-service/*` → `http://localhost:3002/auth-service/*`
-
-### CORS Configuration
-
-All services use an explicit CORS origin whitelist (not a wildcard). The allowed origins cover the frontend micro-frontend architecture:
-
-| App | Port | Description |
-|---|---|---|
-| CargoEz Shell | 5173 | Host app that loads remote micro-frontends |
-| Contacts | 5174 | Remote micro-frontend |
-| Freight | 5175 | Remote micro-frontend |
-| Books | 5176 | Remote micro-frontend |
-| Admin | 5177 | Standalone admin app |
-| CRA / Next.js | 3000 | Alternative React setups |
-| Angular | 4200 | Angular dev server |
-| Ionic | 8100 | Ionic dev server |
-
-Each micro-frontend runs independently and makes its own API calls, so all ports must be whitelisted in both the backend CORS config and the Keycloak `cargoez-web` client's redirect URIs / web origins.
-
----
-
-## Clean Architecture (per service)
-
-Every service follows strict **Clean Architecture** with 4 layers. Dependencies always point inward — the domain layer has zero framework imports.
-
-```
-src/
-├── domain/                              # Pure TypeScript — NO framework dependencies
-│   ├── entities/
-│   │   └── user.entity.ts               # Interface extending BaseEntity
-│   └── repositories/
-│       └── user-repository.interface.ts  # IUserRepository type + DI token constant
-│
-├── application/                         # Business logic — depends only on domain
-│   └── use-cases/
-│       ├── create-user.use-case.ts      # @Injectable, @Inject(USER_REPOSITORY)
-│       ├── get-all-users.use-case.ts
-│       ├── get-user-by-id.use-case.ts
-│       ├── update-user.use-case.ts
-│       └── delete-user.use-case.ts
-│
-├── infrastructure/                      # Concrete implementations
-│   └── repositories/
-│       └── user.repository.ts           # extends BaseRepository<User>, uses Knex
-│
-└── presentation/                        # HTTP layer + DI wiring
-    ├── controllers/
-    │   ├── users.controller.ts          # Injects use cases (not repositories)
-    │   └── health.controller.ts
-    ├── dto/
-    │   ├── create-user.dto.ts           # class-validator + @nestjs/swagger decorators
-    │   └── update-user.dto.ts
-    └── users.module.ts                  # Binds USER_REPOSITORY → UserRepository
-```
-
-**Dependency rule:** `Presentation → Application → Domain ← Infrastructure`
-
-**Data flow:** `HTTP Request → Auth Guard → Controller → Use Case → Repository Interface → Repository Impl → Database`
-
-**DI wiring (in `users.module.ts`):**
-
-```typescript
-@Module({
-  providers: [
-    { provide: USER_REPOSITORY, useClass: UserRepository },
-    CreateUserUseCase,
-    GetAllUsersUseCase,
-    // ...
-  ],
-  controllers: [UsersController],
-})
-export class UsersModule {}
-```
-
-Use cases depend on the `IUserRepository` domain interface. NestJS injects the `UserRepository` infrastructure implementation at runtime via the `USER_REPOSITORY` DI token.
 
 ---
 
@@ -310,10 +310,10 @@ Use cases depend on the `IUserRepository` domain interface. NestJS injects the `
 
 | Library | Import Path | Purpose |
 |---|---|---|
-| `@cargoez/domain` | `libs/domain` | `BaseEntity`, `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
+| `@cargoez/domain` | `libs/domain` | `BaseEntity` (uid, tenant_uid, is_active, timestamps, audit), `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
 | `@cargoez/api` | `libs/api` | `MessageCode`, `MessageCatalog`, `ApiResponse`, `AppException`, `NotFoundException`, `AlreadyExistsException`, `ValidationException` |
-| `@cargoez/shared` | `libs/shared` | `DatabaseModule.forRoot()`, `@InjectKnex()`, `KNEX_CONNECTION` |
-| `@cargoez/infrastructure` | `libs/infrastructure` | `JwtAuthGuard`, `RolesGuard`, `PermissionsGuard`, `@Public()`, `@Roles()`, `@RequirePermission()`, `PermissionCache`, `AbacEvaluator`, `AuthModule`, `RequestContext`, `ContextInterceptor`, `BaseRepository`, `RealtimeGateway`, `RealtimeModule`, `DomainEvent`, `domainEventBus`, `PinoLoggerService`, `GlobalExceptionFilter` |
+| `@cargoez/shared` | `libs/shared` | `DatabaseModule.forRoot()`, `TenantConnectionManager`, `@InjectKnex()`, `KNEX_CONNECTION` |
+| `@cargoez/infrastructure` | `libs/infrastructure` | `JwtAuthGuard`, `PermissionsGuard`, `@Public()`, `@RequirePermission()`, `AbacEvaluator`, `AuthModule`, `RequestContext`, `ContextInterceptor`, `BaseRepository`, `TenantBaseRepository`, `RealtimeGateway`, `RealtimeModule`, `PinoLoggerService`, `GlobalExceptionFilter` |
 
 **Dependency graph:**
 
@@ -328,62 +328,12 @@ infrastructure  → domain, api, shared
 
 ---
 
-## Authentication & Authorization
+## Frontend Portals
 
-All APIs are protected with **JWT Bearer tokens** via **Keycloak** (OAuth 2.0 / OIDC / JWKS).
-
-### Getting a Token
-
-```bash
-curl -X POST http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password&client_id=cargoez-api&username=admin&password=admin123"
-```
-
-### Using the Token
-
-```bash
-curl http://localhost:4000/user-service/users \
-  -H "Authorization: Bearer <access_token>"
-```
-
-In Swagger UI, click **Authorize** and paste: `Bearer <access_token>`
-
-### Authorization: Pure ABAC with Keycloak Authentication
-
-The system uses a **pure ABAC** (Attribute-Based Access Control) model for all business operations. Keycloak provides authentication and role identity; the auth-service ABAC database is the single source of truth for authorization decisions.
-
-**Three-layer guard pipeline (every request):**
-
-1. **JwtAuthGuard** — Validates JWT via Keycloak JWKS, extracts user identity and roles
-2. **RolesGuard** — Checks `@Roles()` if present (reserved for area-level controller gates only)
-3. **PermissionsGuard** — Checks `@RequirePermission()`, resolves permissions from auth-service (cached 5 min), evaluates ABAC conditions, attaches filters to request
-
-Permission keys follow the format `{module}.{screen}.{operation}` (e.g., `user-management.users.create`).
-
-| Decorator | Use Case | Description |
-|---|---|---|
-| `@RequirePermission('module.screen.op')` | All write endpoints | ABAC-controlled via auth-service database |
-| `@Roles('super-admin')` | Area-level gates | Restricts entire controller to certain roles |
-| `@Public()` | Health checks | Skip authentication entirely |
-
-**Default roles:** `super-admin`, `admin`, `manager`, `user`, `viewer`
-
-**ABAC conditions** (configured per role-permission in `role_permissions.conditions` JSONB):
-- `tenant_isolation` — auto-filters queries by tenant
-- `ownership_only` — restricts updates/deletes to records created by the user
-- `department`, `max_amount`, `time_window`, `custom_rules`
-
-### Keycloak Clients
-
-| Client ID | Grant Type | Purpose |
-|---|---|---|
-| `cargoez-api` | Password (ROPC) | Postman / API testing |
-| `cargoez-web` | Auth Code + PKCE | Frontend micro-frontends (ports 5173–5177, plus 3000, 4200, 8100) |
-| `cargoez-mobile` | Auth Code + PKCE | Mobile apps |
-| `cargoez-service` | Client Credentials | Service-to-service |
-
-> See [AUTHENTICATION.md](AUTHENTICATION.md) for the full guide including PKCE flows, token anatomy, and frontend/mobile integration.
+| Portal | URL | Keycloak Client | Purpose |
+|---|---|---|---|
+| SysAdmin Portal | `admin.cargoez.com` | `cargoez-admin` | Platform administration, tenant management |
+| Tenant Portal | `app.cargoez.com` | `cargoez-web` | Tenant application (freight, contacts, books) |
 
 ---
 
@@ -401,139 +351,7 @@ interface ApiResponse<T = any> {
 }
 ```
 
-**Success example:**
-
-```json
-{
-  "success": true,
-  "messageCode": "LIST_FETCHED",
-  "message": "Resources fetched successfully",
-  "data": {
-    "data": [
-      { "id": "uuid", "name": "John Doe", "email": "john@example.com", ... }
-    ],
-    "pagination": { "page": 1, "limit": 10, "total": 42, "totalPages": 5 }
-  }
-}
-```
-
-**Error example:**
-
-```json
-{
-  "success": false,
-  "messageCode": "NOT_FOUND",
-  "message": "Resource not found",
-  "errors": ["User not found"]
-}
-```
-
 > See [ERROR_CODES.md](ERROR_CODES.md) for the complete message code reference.
-
----
-
-## How Services Are Built
-
-Each NestJS service follows a consistent bootstrap pattern:
-
-```typescript
-// main.ts
-config({ path: join(process.cwd(), '.env') });
-
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  app.enableCors({
-    origin: [
-      'http://localhost:3000', 'http://localhost:5173',
-      'http://localhost:5174', 'http://localhost:5175',
-      'http://localhost:5176', 'http://localhost:5177',
-      'http://localhost:4200', 'http://localhost:8100',
-    ],
-    credentials: true,
-  });
-  app.setGlobalPrefix('my-service');
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  app.useGlobalFilters(new GlobalExceptionFilter());
-  app.useGlobalInterceptors(new ContextInterceptor());
-
-  // Swagger setup with server URL for portal compatibility
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('My Service')
-    .addServer(`http://localhost:${port}`, 'Direct')
-    .addBearerAuth()
-    .build();
-
-  await app.listen(port);
-}
-```
-
-```typescript
-// app.module.ts
-@Module({
-  imports: [
-    DatabaseModule.forRoot({ connectionPrefix: 'MY_SERVICE' }),
-    AuthModule,
-    RealtimeModule,
-    MyFeatureModule,
-  ],
-})
-export class AppModule {}
-```
-
-**What each shared module provides:**
-
-| Module | What it does |
-|---|---|
-| `DatabaseModule.forRoot()` | Knex connection pool, injected via `@InjectKnex()`. Accepts `connectionPrefix` for per-service DB connections (host, port, user, password, database). |
-| `AuthModule` | Global `JwtAuthGuard` (Keycloak JWKS) + `RolesGuard` + `PermissionsGuard`. Use `@Public()` to skip auth, `@RequirePermission('module.screen.operation')` for ABAC-controlled authorization, `@Roles()` for area-level controller gates only. |
-| `RealtimeModule` | Socket.IO WebSocket gateway with JWT-authenticated connections. Auto-broadcasts domain events. |
-| `ContextInterceptor` | AsyncLocalStorage-based `RequestContext` (`userId`, `userEmail`, `roles`, `tenantId`, `requestId`). |
-| `GlobalExceptionFilter` | Catches all exceptions and returns consistent `ApiResponse` error format via `MessageCatalog`. |
-| `BaseRepository` | Generic Knex CRUD with pagination, search, auto audit fields (`createdBy`, `modifiedBy`), ABAC filter enforcement, and domain event emission. |
-
----
-
-## Real-Time Data Sync
-
-When `RealtimeModule` is imported, Socket.IO is attached to the service's HTTP server. `BaseRepository` automatically emits domain events on create/update/delete, which are broadcast to subscribed WebSocket clients.
-
-### Frontend Integration
-
-```typescript
-import { io } from 'socket.io-client';
-
-const socket = io('http://localhost:3001', {
-  auth: { token: '<access_token>' },
-});
-
-// Subscribe to all user changes
-socket.emit('subscribe', { room: 'entity:users' });
-
-// Listen for real-time updates
-socket.on('data-changed', (event) => {
-  console.log(event);
-  // {
-  //   entity: "users",
-  //   action: "created" | "updated" | "deleted",
-  //   entityId: "uuid",
-  //   data: { ... },
-  //   actor: "user-id",
-  //   tenantId: "tenant-id",
-  //   timestamp: "2026-03-04T..."
-  // }
-});
-
-// Unsubscribe
-socket.emit('unsubscribe', { room: 'entity:users' });
-```
-
-### Room Patterns
-
-| Room | Receives |
-|---|---|
-| `entity:<table>` | All changes for a table (e.g., `entity:users`) |
-| `entity:<table>:<id>` | Changes to a specific record |
-| `tenant:<tenantId>` | All changes for a tenant |
 
 ---
 
@@ -544,18 +362,19 @@ socket.emit('unsubscribe', { room: 'entity:users' });
 | `pnpm install` | Install all dependencies |
 | `pnpm build` | Build all libs and apps (Nx cached, dependency-aware) |
 | `pnpm build:affected` | Build only changed projects |
-| `pnpm start:all` | Start all services in parallel (via Nx, `--parallel=3`) |
-| `pnpm start:user` | Start user-service |
-| `pnpm start:auth` | Start auth-service |
-| `pnpm start:portal` | Start API Portal |
-| `pnpm dev:user` | Run user-service directly (after build) |
-| `pnpm dev:auth` | Run auth-service directly (after build) |
-| `pnpm dev:portal` | Run API Portal directly (after build) |
-| `pnpm migrate:user` | Run user-service DB migrations |
-| `pnpm migrate:auth` | Run auth-service DB migrations (creates permission tables + seed data) |
+| `pnpm start:all` | Start all services in parallel |
+| `pnpm start:admin` | Start admin-service |
+| `pnpm start:freight` | Start freight-service |
+| `pnpm start:contacts` | Start contacts-service |
+| `pnpm start:books` | Start books-service |
+| `pnpm migrate:admin` | Run admin-service DB migrations + seed data |
+| `pnpm migrate:shared` | Run shared DB migrations |
 | `pnpm test` | Run tests (Nx cached) |
 | `pnpm lint` | Lint all projects (Nx cached) |
 | `pnpm graph` | Open Nx dependency graph visualization |
+| `node scripts/setup-multi-tenant.js` | Seed shared tenants (Demo + Acme) with access control and business data |
+| `node scripts/setup-enterprise-tenant.js` | Create enterprise tenant (Global Freight) with dedicated DB |
+| `node scripts/generate-schema-docs.js` | Generate DOCX and Excel database schema files in `docs/` |
 
 ---
 
@@ -564,11 +383,42 @@ socket.emit('unsubscribe', { room: 'entity:users' });
 | Document | Description |
 |---|---|
 | [PACKAGES.md](PACKAGES.md) | Shared libraries — all exports, usage examples, dependency graph |
-| [DEVELOPMENT.md](DEVELOPMENT.md) | Development guide — Clean Architecture, adding new services, coding conventions |
-| [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, OAuth 2.0 flows (ROPC, PKCE, Client Credentials), token management |
+| [DEVELOPMENT.md](DEVELOPMENT.md) | Development guide — Clean Architecture, adding new entities, coding conventions |
+| [AUTHENTICATION.md](AUTHENTICATION.md) | Keycloak setup, multi-tenant auth, resolve-context flow |
 | [ERROR_CODES.md](ERROR_CODES.md) | Message codes, HTTP statuses, error response examples |
-| [RBAC-ABAC.md](RBAC-ABAC.md) | RBAC + ABAC permission system — architecture, API endpoints, ABAC conditions |
-| [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md) | Express → NestJS migration analysis & decision record |
+| [RBAC-ABAC.md](RBAC-ABAC.md) | Pure ABAC permission system — two-database authorization, conditions, evaluator |
+| [ARCHITECTURE-COMPARISON.md](ARCHITECTURE-COMPARISON.md) | ADR: Express → Nx + NestJS migration history |
+| [TEMPORAL-HANDOVER.md](TEMPORAL-HANDOVER.md) | Temporal workflow integration points and handover documentation |
+
+### Database Schema Files
+
+| File | Format | Contents |
+|---|---|---|
+| [`docs/CargoEz-Database-Schema.docx`](../docs/CargoEz-Database-Schema.docx) | Word | All tables with columns, organized by database |
+| [`docs/CargoEz-Database-Schema.xlsx`](../docs/CargoEz-Database-Schema.xlsx) | Excel | Separate sheets per database with column specifications |
+
+---
+
+## Test Credentials
+
+### SysAdmin Portal (admin.cargoez.com — port 5177)
+
+| User | Password | Role |
+|---|---|---|
+| `admin@cargoez.com` | `admin123` | Super Admin (full access) |
+| `support@cargoez.com` | `support123` | Support Admin |
+| `ops@cargoez.com` | `ops123` | Operations Admin |
+
+### Tenant Portal (app.cargoez.com — port 5173)
+
+| User | Password | Tenant | Role |
+|---|---|---|---|
+| `manager@demo.cargoez.com` | `demo123` | Demo Logistics | Manager |
+| `viewer@demo.cargoez.com` | `demo123` | Demo Logistics | Viewer |
+| `manager@acme.cargoez.com` | `acme123` | Acme Logistics | Manager |
+| `viewer@acme.cargoez.com` | `acme123` | Acme Logistics | Viewer |
+| `admin@globalfreight.cargoez.com` | `global123` | Global Freight Corp (Enterprise) | Admin |
+| `ops@globalfreight.cargoez.com` | `global123` | Global Freight Corp (Enterprise) | Operations |
 
 ---
 

@@ -19,10 +19,14 @@ export interface PaginatedResult<T> {
   };
 }
 
+export interface PaginationFindAllOptions extends PaginationOptions {
+  includeInactive?: boolean;
+}
+
 export interface IBaseRepository<T extends BaseEntity> {
-  findAll(options?: PaginationOptions): Promise<PaginatedResult<T>>;
-  findById(id: string): Promise<T | null>;
+  findAll(options?: PaginationFindAllOptions): Promise<PaginatedResult<T>>;
+  findByUid(uid: string): Promise<T | null>;
   save(entity: Partial<T>): Promise<T>;
-  update(id: string, entity: Partial<T>): Promise<T>;
-  delete(id: string): Promise<void>;
+  update(uid: string, entity: Partial<T>): Promise<T>;
+  delete(uid: string): Promise<void>;
 }

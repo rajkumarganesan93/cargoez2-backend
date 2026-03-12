@@ -1,6 +1,6 @@
 # CargoEz — Authentication & Authorization Guide
 
-> Complete reference for API authentication using Keycloak (OAuth 2.0 / OIDC). Covers backend developers, frontend developers, mobile developers, and API testers.
+> Multi-tenant SaaS authentication using Keycloak (OAuth 2.0 / OIDC) with centralized identity resolution via admin-service. Covers backend developers, frontend developers, mobile developers, and API testers.
 
 ---
 
@@ -10,16 +10,16 @@
 2. [How It Works](#2-how-it-works)
 3. [Keycloak Setup](#3-keycloak-setup)
 4. [Keycloak Clients](#4-keycloak-clients)
-5. [Users, Roles & Permissions](#5-users-roles--permissions)
-6. [Getting Tokens from Postman (API Testing)](#6-getting-tokens-from-postman-api-testing)
-7. [Getting Tokens from curl / PowerShell](#7-getting-tokens-from-curl--powershell)
-8. [Using Tokens in Swagger UI](#8-using-tokens-in-swagger-ui)
-9. [Frontend Web Integration (PKCE)](#9-frontend-web-integration-pkce)
-10. [Mobile App Integration (PKCE)](#10-mobile-app-integration-pkce)
-11. [Service-to-Service Authentication](#11-service-to-service-authentication)
+5. [Realm Roles](#5-realm-roles)
+6. [resolve-context Flow](#6-resolve-context-flow)
+7. [Permission Caching](#7-permission-caching)
+8. [Getting Tokens (API Testing)](#8-getting-tokens-api-testing)
+9. [Using Tokens in Swagger UI](#9-using-tokens-in-swagger-ui)
+10. [Frontend Web Integration (PKCE)](#10-frontend-web-integration-pkce)
+11. [Mobile App Integration (PKCE)](#11-mobile-app-integration-pkce)
 12. [Token Anatomy](#12-token-anatomy)
 13. [Token Refresh](#13-token-refresh)
-14. [Backend Middleware Reference](#14-backend-middleware-reference)
+14. [Backend Guard Pipeline](#14-backend-guard-pipeline)
 15. [Route Protection Reference](#15-route-protection-reference)
 16. [Error Responses](#16-error-responses)
 17. [Environment Variables](#17-environment-variables)
@@ -32,77 +32,89 @@
 ## 1. Architecture Overview
 
 ```
-                                ┌─────────────────────────┐
-                                │       Keycloak           │
-                                │   (Authorization Server) │
-                                │   http://localhost:8080   │
-                                │                           │
-                                │  ┌─────────────────────┐ │
-                                │  │   cargoez realm      │ │
-                                │  │   ├── cargoez-api    │ │  ← Postman / API testing (ROPC)
-                                │  │   ├── cargoez-web    │ │  ← Frontend web apps (PKCE)
-                                │  │   ├── cargoez-mobile │ │  ← Mobile apps (PKCE)
-                                │  │   └── cargoez-service│ │  ← Service-to-service (Client Credentials)
-                                │  └─────────────────────┘ │
-                                └────────────┬────────────┘
-                                             │
-                          ┌──────────────────┼──────────────────┐
-                          │ JWT (access_token)│                  │
-                          ▼                  ▼                  ▼
-                  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-                  │ user-service │  │ auth-service │  │   future     │
-                  │  :3001       │  │  :3002       │  │  services    │
-                  │              │  │              │  │              │
-                  │ ┌──────────┐ │  │ ┌──────────┐ │  │ ┌──────────┐ │
-                  │ │JWKS      │ │  │ │JWKS      │ │  │ │JWKS      │ │
-                  │ │verify    │ │  │ │verify    │ │  │ │verify    │ │
-                  │ └──────────┘ │  │ └──────────┘ │  │ └──────────┘ │
-                  │ ┌──────────┐ │  │ ┌──────────┐ │  │ ┌──────────┐ │
-                  │ │Role      │ │  │ │Role      │ │  │ │Role      │ │
-                  │ │check     │ │  │ │check     │ │  │ │check     │ │
-                  │ └──────────┘ │  │ └──────────┘ │  │ └──────────┘ │
-                  └──────────────┘  └──────────────┘  └──────────────┘
+                                ┌─────────────────────────────┐
+                                │        Keycloak              │
+                                │   (Identity Provider)        │
+                                │   http://localhost:8080       │
+                                │                              │
+                                │  ┌────────────────────────┐  │
+                                │  │   cargoez realm         │  │
+                                │  │   ├── cargoez-admin     │  │  ← SysAdmin portal (PKCE)
+                                │  │   └── cargoez-web       │  │  ← Tenant portal (PKCE)
+                                │  └────────────────────────┘  │
+                                └──────────────┬───────────────┘
+                                               │
+                                    JWT (access_token)
+                                               │
+              ┌────────────────────────────────┼──────────────────────────────┐
+              ▼                                ▼                              ▼
+   ┌──────────────────┐             ┌──────────────────┐          ┌──────────────────┐
+   │ admin-service    │             │ freight-service  │          │ contacts / books │
+   │ :3001            │◄────────────│ :3002            │          │ :3003 / :3004    │
+   │                  │  resolve-   │                  │          │                  │
+   │ ┌──────────────┐ │  context    │ ┌──────────────┐ │          │ ┌──────────────┐ │
+   │ │ admin_db     │ │             │ │ JWKS verify  │ │          │ │ JWKS verify  │ │
+   │ │ (users,      │ │             │ │ + resolve    │ │          │ │ + resolve    │ │
+   │ │  tenants,    │ │             │ │   context    │ │          │ │   context    │ │
+   │ │  roles,      │ │             │ └──────────────┘ │          │ └──────────────┘ │
+   │ │  permissions)│ │             │ ┌──────────────┐ │          │ ┌──────────────┐ │
+   │ └──────────────┘ │             │ │ Tenant DB    │ │          │ │ Tenant DB    │ │
+   │                  │             │ │ (via Manager)│ │          │ │ (via Manager)│ │
+   └──────────────────┘             │ └──────────────┘ │          │ └──────────────┘ │
+                                    └──────────────────┘          └──────────────────┘
 ```
 
 **Key Concepts:**
 
-- **Keycloak** is the single source of truth for user identities, passwords, and roles
-- **Clients** represent different applications that need tokens (web, mobile, API tools, services)
-- **JWT access tokens** are issued by Keycloak and verified by each microservice independently
-- **JWKS** (JSON Web Key Set) is how microservices verify token signatures without sharing secrets
-- The backend **never sees passwords** — only validated JWT tokens
+- **Keycloak** provides user identity (authentication) — passwords, SSO, PKCE flows
+- **admin-service** provides authorization context — maps keycloak_sub to user identity, tenant, and permissions
+- **JWT access tokens** are issued by Keycloak and verified by each service independently via JWKS
+- **No tenant_uid in JWT** — tenant is resolved by admin-service from the keycloak_sub
+- **resolve-context** is the single internal endpoint that combines user identity, DB connection, and permissions
 
 ---
 
 ## 2. How It Works
 
-### OAuth 2.0 Flows Used
-
-| Flow | Client | Use Case | Security Level |
-|------|--------|----------|---------------|
-| **Authorization Code + PKCE** | `cargoez-web` | Frontend web apps (React, Angular, Vue) | Highest — passwords never leave Keycloak |
-| **Authorization Code + PKCE** | `cargoez-mobile` | Mobile apps (React Native, Flutter) | Highest — passwords never leave Keycloak |
-| **Resource Owner Password (ROPC)** | `cargoez-api` | Postman, curl, CLI tools, dev testing | Medium — client sends username/password directly |
-| **Client Credentials** | `cargoez-service` | Service-to-service (no user context) | High — uses client_id + client_secret |
-
-### Token Verification Flow (All Flows)
-
-Regardless of how the token was obtained, every microservice verifies it the same way:
+### Authentication Flow (All Services)
 
 ```
-1. Client sends:  Authorization: Bearer <JWT>
-2. Middleware extracts the JWT
-3. Middleware fetches Keycloak's public key via JWKS endpoint (cached 10 min)
-4. Middleware verifies: signature (RS256), issuer, audience, expiry
-5. On success: req.user = { sub, email, roles, ... }
-6. On failure: 401 Unauthorized
+1. Client obtains JWT from Keycloak (via PKCE or ROPC)
+2. Client sends:  Authorization: Bearer <JWT>
+3. JwtAuthGuard validates JWT via Keycloak JWKS (cached 10 min)
+4. ContextInterceptor calls admin-service /internal/resolve-context
+   - Sends: keycloak_sub (from JWT)
+   - Receives: user identity + tenant DB config + permissions
+5. RequestContext populated with all resolved data
+6. PermissionsGuard checks @RequirePermission() from RequestContext
+7. Controller executes with full tenant context
 ```
+
+### What Makes This Different
+
+| Aspect | Old Architecture | New Architecture |
+|---|---|---|
+| Tenant identity | In JWT claim | Resolved via admin-service lookup |
+| Permissions | HTTP call per guard check | Single resolve-context call, cached 5 min |
+| DB connection | Static per service | Dynamic per tenant via TenantConnectionManager |
+| Services | auth-service + user-service | admin-service (central) + domain services |
 
 ---
 
 ## 3. Keycloak Setup
 
-### Option A: Standalone (Java 17+)
+### Option A: Docker
+
+```bash
+docker run -d --name keycloak \
+  -p 8080:8080 \
+  -e KC_BOOTSTRAP_ADMIN_USERNAME=admin \
+  -e KC_BOOTSTRAP_ADMIN_PASSWORD=admin \
+  -v ./keycloak/cargoez-realm.json:/opt/keycloak/data/import/cargoez-realm.json \
+  quay.io/keycloak/keycloak:26.1.0 start-dev --import-realm
+```
+
+### Option B: Standalone (Java 17+)
 
 ```bash
 # Windows (PowerShell)
@@ -118,37 +130,30 @@ export KEYCLOAK_ADMIN_PASSWORD=admin
 
 Place `keycloak/cargoez-realm.json` into Keycloak's `data/import/` folder before starting.
 
-### Option B: Docker Compose
-
-```bash
-docker-compose up -d keycloak
-```
-
 ### Keycloak Admin Console
 
 | URL | Credentials | Purpose |
 |-----|-------------|---------|
 | http://localhost:8080/admin | `admin` / `admin` | Manage realm, users, roles, clients |
 
-> **Important:** The admin console credentials (`admin`/`admin`) are different from the API test user credentials (`admin`/`admin123`).
-
 ---
 
 ## 4. Keycloak Clients
 
-The `cargoez` realm has 4 pre-configured clients, each for a specific use case:
+The `cargoez` realm has 2 clients, one per frontend portal:
 
-### cargoez-api (Postman / API Testing)
+### cargoez-admin (SysAdmin Portal)
 
 | Setting | Value |
 |---------|-------|
-| Client ID | `cargoez-api` |
+| Client ID | `cargoez-admin` |
 | Type | Public (no secret) |
-| Grant Type | Resource Owner Password Credentials (ROPC) |
-| PKCE | Not applicable (direct grant) |
-| Use For | Postman, curl, CLI tools, Swagger "Try it out" |
+| Grant Type | Authorization Code + PKCE (S256) |
+| PKCE Enforcement | Required (S256 only) |
+| Redirect URIs | `https://admin.cargoez.com/*`, `http://localhost:5177/*` |
+| Use For | SysAdmin portal — platform management, tenant provisioning |
 
-### cargoez-web (Frontend Web Apps)
+### cargoez-web (Tenant Portal)
 
 | Setting | Value |
 |---------|-------|
@@ -156,117 +161,178 @@ The `cargoez` realm has 4 pre-configured clients, each for a specific use case:
 | Type | Public (no secret) |
 | Grant Type | Authorization Code + PKCE (S256) |
 | PKCE Enforcement | Required (S256 only) |
-| Redirect URIs | `http://localhost:3000/*`, `http://localhost:5173/*` through `http://localhost:5177/*`, `http://localhost:4200/*`, `http://localhost:8100/*` |
-| Web Origins | Same ports without the `/*` suffix |
-| Use For | React micro-frontends (Shell :5173, Contacts :5174, Freight :5175, Books :5176, Admin :5177), Angular, or any browser-based SPA |
-
-### cargoez-mobile (Mobile Apps)
-
-| Setting | Value |
-|---------|-------|
-| Client ID | `cargoez-mobile` |
-| Type | Public (no secret) |
-| Grant Type | Authorization Code + PKCE (S256) |
-| PKCE Enforcement | Required (S256 only) |
-| Redirect URIs | `cargoez://callback`, `cargoez://oauth/callback`, `exp://127.0.0.1:8081/--/auth/callback` |
-| Use For | React Native, Flutter, Expo, or any native mobile app |
-
-### cargoez-service (Service-to-Service)
-
-| Setting | Value |
-|---------|-------|
-| Client ID | `cargoez-service` |
-| Type | Confidential (has secret) |
-| Client Secret | `cargoez-service-secret` |
-| Grant Type | Client Credentials |
-| Use For | Backend microservice-to-microservice calls (no user context) |
+| Redirect URIs | `https://app.cargoez.com/*`, `http://localhost:5173/*` through `http://localhost:5176/*` |
+| Use For | Tenant application — freight, contacts, books |
 
 ---
 
-## 5. Users, Roles & Permissions
+## 5. Realm Roles
 
-### Realm Roles
+Keycloak realm roles define the user's identity type. They do **not** control granular permissions — that's handled by the ABAC system in the tenant DB.
 
-Keycloak realm roles provide **identity** — they tell the system who the user is. Authorization decisions are made by the auth-service ABAC database, which maps these roles to granular permissions.
+| Role | Description | Portal |
+|------|-------------|--------|
+| `sys_admin` | System administrator — full platform access | admin.cargoez.com |
+| `tenant_admin` | Tenant administrator — full access within their tenant | app.cargoez.com |
+| `app_customer` | Standard application user | app.cargoez.com |
+| `branch_customer` | Branch-level user (limited to their branch) | app.cargoez.com |
 
-| Role | Description |
-|------|-------------|
-| `admin` | Full CRUD access — all permissions on all modules (with tenant isolation) |
-| `manager` | Read + Update access — no create or delete (with tenant isolation) |
-| `user` | Read-only access — view operations on all modules (with tenant isolation) |
+### Role-to-Portal Mapping
 
-### Pre-configured Test Users
-
-| Username | Password | Keycloak Roles | Effective ABAC Permissions |
-|----------|----------|----------------|----------------------------|
-| `admin` | `admin123` | `admin`, `user` | Full CRUD on all modules (44 permissions) |
-| `manager` | `manager123` | `manager`, `user` | Read + Update on all modules (22 permissions) |
-| `testuser` | `test123` | `user` | Read-only on all modules (11 permissions) |
-
-### Route Protection Matrix (user-service example)
-
-Authorization is controlled by `@RequirePermission()` decorators backed by the auth-service ABAC database. See [RBAC-ABAC.md](RBAC-ABAC.md) for full details.
-
-| Endpoint | Method | Permission Required | admin | manager | testuser |
-|----------|--------|---------------------|-------|---------|----------|
-| `/health` | GET | None (`@Public`) | Yes | Yes | Yes |
-| `/users` | GET | None (any authenticated) | Yes | Yes | Yes |
-| `/users/:id` | GET | None (any authenticated) | Yes | Yes | Yes |
-| `/users` | POST | `user-management.users.create` | Yes | **403** | **403** |
-| `/users/:id` | PUT | `user-management.users.update` | Yes | Yes | **403** |
-| `/users/:id` | DELETE | `user-management.users.delete` | Yes | **403** | **403** |
+| Role | admin.cargoez.com | app.cargoez.com |
+|------|-------------------|-----------------|
+| `sys_admin` | Full access | N/A |
+| `tenant_admin` | N/A | Full tenant access |
+| `app_customer` | N/A | Standard access |
+| `branch_customer` | N/A | Branch-scoped access |
 
 ---
 
-## 6. Getting Tokens from Postman (API Testing)
+## 6. resolve-context Flow
 
-This section is for backend developers and API testers who need to quickly get tokens for testing.
+This is the core of the multi-tenant authentication system. A single internal endpoint replaces what previously required multiple service calls.
 
-### Step-by-Step
+### Endpoint
 
-**1. Create a new POST request**
+```
+GET /internal/resolve-context
+Headers: Authorization: Bearer <JWT>
+```
 
-- Method: `POST`
-- URL: `http://localhost:8080/realms/cargoez/protocol/openid-connect/token`
+### Flow
 
-**2. Configure the Body**
+```
+┌──────────────┐     ┌──────────────────┐     ┌──────────────┐
+│ Any Service  │     │  admin-service   │     │   admin_db   │
+│              │     │                  │     │              │
+│ Intercept    │     │                  │     │              │
+│ request      │     │                  │     │              │
+│     │        │     │                  │     │              │
+│     ▼        │     │                  │     │              │
+│ Extract      │     │                  │     │              │
+│ keycloak_sub │     │                  │     │              │
+│ from JWT     │     │                  │     │              │
+│     │        │     │                  │     │              │
+│     ├────────┼────►│ 1. Lookup user   │────►│ users table  │
+│     │        │     │    by kc_sub     │◄────│ (keycloak_sub│
+│     │        │     │                  │     │  → user_uid) │
+│     │        │     │ 2. Get tenant    │────►│ tenants tbl  │
+│     │        │     │    info + DB cfg │◄────│ (tenant_code │
+│     │        │     │                  │     │  → DB config)│
+│     │        │     │ 3. Get perms     │     │              │
+│     │        │     │    from tenant DB│     │              │
+│     │        │     │    (role_perms)  │     │              │
+│     │        │     │                  │     │              │
+│     │◄───────┼─────│ Return combined  │     │              │
+│     │        │     │ context          │     │              │
+│     ▼        │     │                  │     │              │
+│ Populate     │     │                  │     │              │
+│ RequestCtx   │     │                  │     │              │
+└──────────────┘     └──────────────────┘     └──────────────┘
+```
 
-- Go to the **Body** tab
-- Select **x-www-form-urlencoded**
-- Add these key-value pairs:
-
-| Key | Value |
-|-----|-------|
-| `grant_type` | `password` |
-| `client_id` | `cargoez-api` |
-| `username` | `admin` |
-| `password` | `admin123` |
-
-**3. Click Send**
-
-Response:
+### Response Shape
 
 ```json
 {
-  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCIs...",
-  "expires_in": 300,
-  "refresh_expires_in": 1800,
-  "refresh_token": "eyJhbGciOiJIUzUxMiIs...",
-  "token_type": "Bearer",
-  "scope": "profile email"
+  "user": {
+    "uid": "user-uuid",
+    "email": "user@acme.com",
+    "keycloak_sub": "kc-uuid",
+    "tenant_uid": "tenant-uuid",
+    "tenant_code": "acme"
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "tenant_acme_db"
+  },
+  "permissions": [
+    { "key": "freight.create", "conditions": { "tenant_isolation": true } },
+    { "key": "freight.read", "conditions": null },
+    { "key": "contacts.read", "conditions": null }
+  ]
 }
 ```
 
-**4. Use the token**
+### Why No tenant_uid in JWT?
 
-- Copy the `access_token` value
-- In your API request, go to the **Authorization** tab
-- Select **Bearer Token**
-- Paste the token
+- JWTs are issued by Keycloak, which doesn't know about CargoEz tenants
+- A user might belong to different tenants (multi-tenant membership)
+- Tenant assignment can change without re-issuing a JWT
+- admin-service is the single source of truth for user-to-tenant mapping
 
-### Auto-Token with Pre-request Script
+---
 
-To avoid manually copying tokens, add this **Pre-request Script** to your Postman collection:
+## 7. Permission Caching
+
+The resolve-context response is cached to avoid calling admin-service on every request.
+
+| Parameter | Value |
+|---|---|
+| Cache key | `keycloak_sub` (from JWT) |
+| TTL | 5 minutes |
+| Scope | Per-service instance (in-memory) |
+| Invalidation | Automatic TTL expiry; manual via `PermissionCache.invalidate()` |
+
+### Cache Behavior
+
+```
+Request 1 (user A):  Cache MISS → call resolve-context → cache result
+Request 2 (user A):  Cache HIT  → use cached context (no HTTP call)
+...
+Request N (user A):  Cache HIT  → use cached context
+After 5 min:         Cache EXPIRED → call resolve-context again
+```
+
+### Manual Invalidation
+
+After updating roles/permissions in admin-service, invalidate the cache:
+
+```typescript
+import { PermissionCache } from '@cargoez/infrastructure';
+
+PermissionCache.invalidate();                    // Clear all
+PermissionCache.invalidateForUser('kc-sub-id');  // Clear specific user
+```
+
+---
+
+## 8. Getting Tokens (API Testing)
+
+### curl (Linux / macOS / Git Bash)
+
+```bash
+# Get token using ROPC (for API testing)
+TOKEN=$(curl -s -X POST \
+  http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=password&client_id=cargoez-web&username=admin&password=admin123" \
+  | jq -r '.access_token')
+
+# Use token
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3002/freight-service/shipments
+```
+
+### PowerShell (Windows)
+
+```powershell
+$body = @{
+  grant_type = "password"
+  client_id  = "cargoez-web"
+  username   = "admin"
+  password   = "admin123"
+}
+$token = (Invoke-RestMethod `
+  -Uri "http://localhost:8080/realms/cargoez/protocol/openid-connect/token" `
+  -Method POST -Body $body `
+  -ContentType "application/x-www-form-urlencoded").access_token
+
+Invoke-RestMethod -Uri "http://localhost:3002/freight-service/shipments" `
+  -Headers @{ Authorization = "Bearer $token" }
+```
+
+### Postman Auto-Token (Pre-request Script)
 
 ```javascript
 const tokenUrl = 'http://localhost:8080/realms/cargoez/protocol/openid-connect/token';
@@ -279,171 +345,63 @@ pm.sendRequest({
     mode: 'urlencoded',
     urlencoded: [
       { key: 'grant_type', value: 'password' },
-      { key: 'client_id', value: 'cargoez-api' },
+      { key: 'client_id', value: 'cargoez-web' },
       { key: 'username', value: 'admin' },
       { key: 'password', value: 'admin123' },
     ]
   }
 }, (err, res) => {
-  if (err) {
-    console.error('Token request failed:', err);
-  } else {
-    const token = res.json().access_token;
-    pm.collectionVariables.set('access_token', token);
-    console.log('Token refreshed successfully');
+  if (!err) {
+    pm.collectionVariables.set('access_token', res.json().access_token);
   }
 });
 ```
 
-Then set your collection's Authorization to: **Bearer Token** → `{{access_token}}`
-
-Every request will auto-fetch a fresh token before executing.
-
-### Switching Users in Postman
-
-Change the `username` and `password` in the token request body:
-
-| To test as... | username | password |
-|---------------|----------|----------|
-| Admin (full access) | `admin` | `admin123` |
-| Manager (read + update) | `manager` | `manager123` |
-| Regular user (read-only) | `testuser` | `test123` |
+Set collection Authorization to: **Bearer Token** -> `{{access_token}}`
 
 ---
 
-## 7. Getting Tokens from curl / PowerShell
+## 9. Using Tokens in Swagger UI
 
-### curl (Linux / macOS / Git Bash)
-
-```bash
-# Get token
-TOKEN=$(curl -s -X POST \
-  http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password&client_id=cargoez-api&username=admin&password=admin123" \
-  | jq -r '.access_token')
-
-# Use token
-curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/users
-```
-
-### PowerShell (Windows)
-
-```powershell
-# Get token
-$body = @{
-  grant_type = "password"
-  client_id  = "cargoez-api"
-  username   = "admin"
-  password   = "admin123"
-}
-$token = (Invoke-RestMethod `
-  -Uri "http://localhost:8080/realms/cargoez/protocol/openid-connect/token" `
-  -Method POST -Body $body `
-  -ContentType "application/x-www-form-urlencoded").access_token
-
-# Use token
-Invoke-RestMethod -Uri "http://localhost:3001/users" `
-  -Headers @{ Authorization = "Bearer $token" }
-```
-
----
-
-## 8. Using Tokens in Swagger UI
-
-Works in both individual service Swagger (`http://localhost:3001/api-docs`) and the global API Portal (`http://localhost:4000`).
-
-1. Get a token using Postman, curl, or PowerShell (see sections above)
-2. Open Swagger UI
-3. Click the **"Authorize"** button (lock icon at the top-right)
-4. Paste the `access_token` value (without the `Bearer ` prefix)
+1. Get a token using curl, PowerShell, or Postman (see above)
+2. Open a service's Swagger UI (e.g., http://localhost:3002/freight-service/api-docs)
+3. Click **"Authorize"** (lock icon)
+4. Paste the `access_token` value (without `Bearer ` prefix)
 5. Click **"Authorize"**, then **"Close"**
-6. All "Try it out" calls now include the token automatically
-7. Lock icons next to endpoints turn **locked** when authorized
-
-> **Note:** In the API Portal, you need to authorize separately for each service selected in the dropdown.
 
 ---
 
-## 9. Frontend Web Integration (PKCE)
+## 10. Frontend Web Integration (PKCE)
 
-This section is for frontend developers building React, Angular, Vue, or Next.js applications.
-
-### What is PKCE?
-
-**PKCE (Proof Key for Code Exchange)** is the recommended OAuth 2.0 flow for browser-based apps. The user is redirected to Keycloak's login page, enters credentials there (your app never sees the password), and Keycloak redirects back with a secure authorization code.
-
-```
-┌──────────────┐                          ┌───────────────┐
-│  Your React   │  1. User clicks "Login"  │   Keycloak    │
-│  App          │─────────────────────────>│               │
-│  :3000        │  redirect to /auth       │   :8080       │
-│               │  + code_challenge (S256) │               │
-│               │                          │  Login Page   │
-│               │  2. User enters password │               │
-│               │                          │               │
-│               │  3. Redirect back        │               │
-│               │<─────────────────────────│               │
-│               │  ?code=abc123            │               │
-│               │                          │               │
-│               │  4. Exchange code        │               │
-│               │─────────────────────────>│  Verify       │
-│               │  code + code_verifier    │  code_verifier│
-│               │<─────────────────────────│  matches      │
-│               │  access_token + refresh  │  challenge    │
-│               │                          │               │
-│               │  5. Call API             │               │
-│               │  Authorization: Bearer   │               │
-│               │  <token>                 │               │
-└──────────────┘                          └───────────────┘
-         │
-         │  6. API call with Bearer token
-         ▼
-  ┌──────────────┐
-  │ user-service │
-  │  :3001       │
-  │  JWKS verify │
-  └──────────────┘
-```
-
-### Keycloak Configuration
-
-| Setting | Value |
-|---------|-------|
-| Client ID | `cargoez-web` |
-| PKCE Method | S256 (enforced) |
-| Redirect URIs | Pre-configured for common dev ports |
-
-### React Example (using `oidc-client-ts` or `react-oidc-context`)
-
-**Install:**
-
-```bash
-npm install oidc-client-ts react-oidc-context
-```
-
-**Configure:**
+### SysAdmin Portal (admin.cargoez.com)
 
 ```typescript
-// src/auth/config.ts
-import { WebStorageStateStore } from 'oidc-client-ts';
-
 export const oidcConfig = {
   authority: 'http://localhost:8080/realms/cargoez',
-  client_id: 'cargoez-web',
-  redirect_uri: 'http://localhost:3000/auth/callback',
-  post_logout_redirect_uri: 'http://localhost:3000',
+  client_id: 'cargoez-admin',
+  redirect_uri: 'http://localhost:5177/auth/callback',
+  post_logout_redirect_uri: 'http://localhost:5177',
   response_type: 'code',
   scope: 'openid profile email',
-  userStore: new WebStorageStateStore({ store: window.sessionStorage }),
-  // PKCE is enabled by default in oidc-client-ts
 };
 ```
 
-**Wrap your app:**
+### Tenant Portal (app.cargoez.com)
+
+```typescript
+export const oidcConfig = {
+  authority: 'http://localhost:8080/realms/cargoez',
+  client_id: 'cargoez-web',
+  redirect_uri: 'http://localhost:5173/auth/callback',
+  post_logout_redirect_uri: 'http://localhost:5173',
+  response_type: 'code',
+  scope: 'openid profile email',
+};
+```
+
+### React Example (using `oidc-client-ts` + `react-oidc-context`)
 
 ```tsx
-// src/main.tsx
 import { AuthProvider } from 'react-oidc-context';
 import { oidcConfig } from './auth/config';
 
@@ -454,17 +412,13 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 );
 ```
 
-**Use in components:**
-
 ```tsx
-// src/App.tsx
 import { useAuth } from 'react-oidc-context';
 
 function App() {
   const auth = useAuth();
 
   if (auth.isLoading) return <div>Loading...</div>;
-
   if (!auth.isAuthenticated) {
     return <button onClick={() => auth.signinRedirect()}>Log in</button>;
   }
@@ -478,33 +432,16 @@ function App() {
 }
 ```
 
-**Make API calls with the token:**
+### Making API Calls
 
 ```typescript
-// src/api/client.ts
-import { useAuth } from 'react-oidc-context';
-
 export function useApiClient() {
   const auth = useAuth();
 
   return {
     async get(url: string) {
       const response = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${auth.user?.access_token}`,
-        },
-      });
-      return response.json();
-    },
-
-    async post(url: string, body: unknown) {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${auth.user?.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
+        headers: { Authorization: `Bearer ${auth.user?.access_token}` },
       });
       return response.json();
     },
@@ -512,145 +449,18 @@ export function useApiClient() {
 }
 ```
 
-### Angular Example (using `angular-auth-oidc-client`)
-
-**Install:**
-
-```bash
-ng add angular-auth-oidc-client
-```
-
-**Configure:**
-
-```typescript
-// src/app/app.config.ts
-import { provideAuth } from 'angular-auth-oidc-client';
-
-export const appConfig = {
-  providers: [
-    provideAuth({
-      config: {
-        authority: 'http://localhost:8080/realms/cargoez',
-        redirectUrl: 'http://localhost:4200/auth/callback',
-        postLogoutRedirectUri: 'http://localhost:4200',
-        clientId: 'cargoez-web',
-        scope: 'openid profile email',
-        responseType: 'code',
-        // PKCE is enabled by default
-      },
-    }),
-  ],
-};
-```
-
-**Use in components:**
-
-```typescript
-import { OidcSecurityService } from 'angular-auth-oidc-client';
-
-export class AppComponent {
-  constructor(private oidcService: OidcSecurityService) {}
-
-  login() { this.oidcService.authorize(); }
-  logout() { this.oidcService.logoff(); }
-
-  callApi() {
-    this.oidcService.getAccessToken().subscribe(token => {
-      fetch('http://localhost:3001/users', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-    });
-  }
-}
-```
-
-### Adding Your Frontend URL to Keycloak
-
-The `cargoez-web` client is pre-configured for the micro-frontend architecture where each module runs on its own port:
-
-| App | Port | Description |
-|-----|------|-------------|
-| CargoEz Shell | 5173 | Host app that loads remote micro-frontends |
-| Contacts | 5174 | Remote micro-frontend |
-| Freight | 5175 | Remote micro-frontend |
-| Books | 5176 | Remote micro-frontend |
-| Admin | 5177 | Standalone admin app |
-
-**Current `cargoez-web` redirect URIs and web origins** (in `keycloak/cargoez-realm.json`):
-
-```json
-{
-  "clientId": "cargoez-web",
-  "redirectUris": [
-    "http://localhost:3000/*",
-    "http://localhost:5173/*",
-    "http://localhost:5174/*",
-    "http://localhost:5175/*",
-    "http://localhost:5176/*",
-    "http://localhost:5177/*",
-    "http://localhost:4200/*",
-    "http://localhost:8100/*"
-  ],
-  "webOrigins": [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "http://localhost:5175",
-    "http://localhost:5176",
-    "http://localhost:5177",
-    "http://localhost:4200",
-    "http://localhost:8100"
-  ]
-}
-```
-
-If your frontend runs on a different port, add it to both `redirectUris` (with `/*` suffix) and `webOrigins` in `keycloak/cargoez-realm.json`, then re-import the realm or update via the Keycloak Admin Console: **Clients → cargoez-web → Settings → Valid Redirect URIs / Web Origins**.
-
-> **Important:** Changing the JSON file only updates the file on disk. You must also update the running Keycloak instance (re-import realm, use the Admin Console, or call the Admin REST API).
-
 ---
 
-## 10. Mobile App Integration (PKCE)
+## 11. Mobile App Integration (PKCE)
 
-This section is for mobile developers building React Native, Flutter, or Expo apps.
-
-### How It Works
-
-Mobile apps use the same Authorization Code + PKCE flow, but instead of browser redirects, they use deep links (custom URL schemes) to receive the authorization code back from Keycloak.
-
-```
-1. App opens Keycloak login in system browser / in-app browser
-2. User enters credentials on Keycloak's page
-3. Keycloak redirects to cargoez://callback?code=abc123
-4. App intercepts the deep link, exchanges code + verifier for tokens
-5. App stores tokens securely and uses them for API calls
-```
-
-### Keycloak Configuration
-
-| Setting | Value |
-|---------|-------|
-| Client ID | `cargoez-mobile` |
-| PKCE Method | S256 (enforced) |
-| Redirect URIs | `cargoez://callback`, `cargoez://oauth/callback`, `exp://127.0.0.1:8081/--/auth/callback` |
-
-### React Native Example (using `react-native-app-auth`)
-
-**Install:**
-
-```bash
-npm install react-native-app-auth
-```
-
-**Configure:**
+Mobile apps use Authorization Code + PKCE with deep links:
 
 ```typescript
-// src/auth/config.ts
-import { authorize, refresh, revoke } from 'react-native-app-auth';
+import { authorize } from 'react-native-app-auth';
 
 const config = {
   issuer: 'http://localhost:8080/realms/cargoez',
-  clientId: 'cargoez-mobile',
+  clientId: 'cargoez-web',
   redirectUrl: 'cargoez://callback',
   scopes: ['openid', 'profile', 'email'],
   usePKCE: true,
@@ -658,187 +468,66 @@ const config = {
 
 export async function login() {
   const result = await authorize(config);
-  return {
-    accessToken: result.accessToken,
-    refreshToken: result.refreshToken,
-    expiresAt: result.accessTokenExpirationDate,
-  };
-}
-
-export async function refreshTokens(refreshToken: string) {
-  const result = await refresh(config, { refreshToken });
-  return {
-    accessToken: result.accessToken,
-    refreshToken: result.refreshToken,
-    expiresAt: result.accessTokenExpirationDate,
-  };
+  return { accessToken: result.accessToken, refreshToken: result.refreshToken };
 }
 ```
-
-**Use the token:**
-
-```typescript
-const { accessToken } = await login();
-
-const response = await fetch('http://your-api-host:3001/users', {
-  headers: { Authorization: `Bearer ${accessToken}` },
-});
-const data = await response.json();
-```
-
-### Flutter Example (using `flutter_appauth`)
-
-```yaml
-# pubspec.yaml
-dependencies:
-  flutter_appauth: ^7.0.0
-  flutter_secure_storage: ^9.0.0
-```
-
-```dart
-import 'package:flutter_appauth/flutter_appauth.dart';
-
-final appAuth = FlutterAppAuth();
-
-Future<String?> login() async {
-  final result = await appAuth.authorizeAndExchangeCode(
-    AuthorizationTokenRequest(
-      'cargoez-mobile',
-      'cargoez://callback',
-      issuer: 'http://localhost:8080/realms/cargoez',
-      scopes: ['openid', 'profile', 'email'],
-    ),
-  );
-  return result?.accessToken;
-}
-```
-
-### Deep Link Setup
-
-For mobile apps, you need to configure deep link handling:
-
-**React Native (iOS):** Add to `Info.plist`:
-```xml
-<key>CFBundleURLTypes</key>
-<array>
-  <dict>
-    <key>CFBundleURLSchemes</key>
-    <array>
-      <string>cargoez</string>
-    </array>
-  </dict>
-</array>
-```
-
-**React Native (Android):** Add to `AndroidManifest.xml`:
-```xml
-<intent-filter>
-  <action android:name="android.intent.action.VIEW" />
-  <category android:name="android.intent.category.DEFAULT" />
-  <category android:name="android.intent.category.BROWSABLE" />
-  <data android:scheme="cargoez" android:host="callback" />
-</intent-filter>
-```
-
----
-
-## 11. Service-to-Service Authentication
-
-For backend microservices calling other microservices without a user context (e.g., cron jobs, background tasks).
-
-### Client Credentials Flow
-
-```bash
-curl -s -X POST \
-  http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=client_credentials" \
-  -d "client_id=cargoez-service" \
-  -d "client_secret=cargoez-service-secret"
-```
-
-The returned token has no user context (`sub` is the service account ID). Use it to call other services:
-
-```bash
-curl -H "Authorization: Bearer $TOKEN" http://localhost:3001/users
-```
-
-> **Note:** In production, rotate `cargoez-service-secret` regularly and never commit it to source control.
 
 ---
 
 ## 12. Token Anatomy
 
-A decoded JWT access token from Keycloak contains:
+A decoded JWT access token from Keycloak:
 
 ```json
 {
   "exp": 1740553200,
   "iat": 1740552900,
   "iss": "http://localhost:8080/realms/cargoez",
-  "aud": "cargoez-api",
   "sub": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "typ": "Bearer",
   "azp": "cargoez-web",
-  "preferred_username": "admin",
-  "email": "admin@cargoez.com",
-  "name": "Admin User",
+  "preferred_username": "john.doe",
+  "email": "john@acme.com",
+  "name": "John Doe",
   "realm_access": {
-    "roles": ["admin", "user"]
-  },
-  "resource_access": {
-    "cargoez-api": {
-      "roles": ["manage-users"]
-    }
+    "roles": ["tenant_admin", "app_customer"]
   },
   "scope": "openid profile email"
 }
 ```
 
+**Important:** The JWT does **not** contain `tenant_uid` or permissions. These are resolved by admin-service via the `sub` (keycloak_sub) claim.
+
 | Field | Description |
 |-------|-------------|
-| `exp` | Token expiry (Unix timestamp) — 300 seconds (5 min) from issue |
-| `iss` | Issuer — must match `KEYCLOAK_ISSUER` env var |
-| `aud` | Audience — must match `KEYCLOAK_AUDIENCE` env var |
-| `sub` | Subject — unique Keycloak user ID (UUID) |
-| `azp` | Authorized Party — the client that requested the token |
-| `realm_access.roles` | Realm-level roles assigned to the user |
-| `resource_access` | Client-level roles (if configured) |
-| `preferred_username` | User's username |
-| `email` | User's email |
+| `sub` | Keycloak user ID — used to look up user in admin_db |
+| `azp` | Authorized party — which client requested the token |
+| `realm_access.roles` | Realm roles: `sys_admin`, `tenant_admin`, `app_customer`, `branch_customer` |
+| `exp` | Token expiry — 300 seconds (5 min) from issue |
 
-### What the Backend Checks
-
-The `JwtAuthGuard` in `@cargoez/infrastructure` verifies:
+### What the Backend Checks (JwtAuthGuard)
 
 1. **Signature** — using Keycloak's RSA public key (fetched via JWKS, cached 10 min)
 2. **Algorithm** — must be RS256
 3. **Issuer** — must match `KEYCLOAK_ISSUER`
-4. **Audience** — must match `KEYCLOAK_AUDIENCE` (if configured)
-5. **Expiry** — token must not be expired
+4. **Expiry** — token must not be expired
 
 ---
 
 ## 13. Token Refresh
 
-Access tokens expire after **5 minutes** (300 seconds). Use the refresh token to get a new access token without re-entering credentials.
-
-### From Postman / curl
+Access tokens expire after **5 minutes**. Use the refresh token to get a new one:
 
 ```bash
 curl -s -X POST \
   http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=refresh_token" \
-  -d "client_id=cargoez-api" \
+  -d "client_id=cargoez-web" \
   -d "refresh_token=<YOUR_REFRESH_TOKEN>"
 ```
 
-### From Frontend (Automatic)
-
-Libraries like `oidc-client-ts` and `react-native-app-auth` handle token refresh automatically. They detect when the access token is about to expire and silently request a new one using the refresh token.
-
-### Refresh Token Lifespan
+Frontend libraries (`oidc-client-ts`, `react-native-app-auth`) handle refresh automatically.
 
 | Token | Lifespan |
 |-------|----------|
@@ -848,149 +537,68 @@ Libraries like `oidc-client-ts` and `react-native-app-auth` handle token refresh
 
 ---
 
-## 14. Backend Auth Reference (NestJS)
+## 14. Backend Guard Pipeline
 
-Authentication is provided by `@cargoez/infrastructure`. No backend code changes are needed to support PKCE — the `JwtAuthGuard` verifies JWTs regardless of how they were obtained (ROPC, PKCE, Client Credentials).
+Every request passes through three stages:
+
+```
+1. JwtAuthGuard        →  Validates JWT via Keycloak JWKS (skipped on @Public())
+2. ContextInterceptor  →  Calls /internal/resolve-context (cached 5 min)
+                           Populates RequestContext with user, tenant, permissions
+3. PermissionsGuard    →  Checks @RequirePermission() from RequestContext (no HTTP call)
+                           Evaluates ABAC conditions, attaches filters
+```
 
 ### AuthModule
 
-Automatically registers `JwtAuthGuard` (global), `RolesGuard` (global), and `PermissionsGuard` (global) when imported in `AppModule`:
+Imported in each service's `AppModule` to register global guards:
 
 ```typescript
-// app.module.ts
-import { AuthModule, RealtimeModule } from '@cargoez/infrastructure';
-
 @Module({
   imports: [
-    DatabaseModule.forRoot({ connectionPrefix: 'USER_SERVICE' }),
-    AuthModule,      // ← Global JWT + Roles + Permissions guards
+    DatabaseModule.forRoot({ connectionPrefix: 'FREIGHT_SERVICE' }),
+    AuthModule,
     RealtimeModule,
+    ShipmentsModule,
   ],
 })
 export class AppModule {}
 ```
 
-### Guard Execution Order
-
-Every request passes through three global guards in this order:
-
-1. **JwtAuthGuard** — Validates JWT token via Keycloak JWKS; skipped on `@Public()` routes
-2. **RolesGuard** — Checks `@Roles()` decorator if present (area-level gate); no-op if absent
-3. **PermissionsGuard** — Checks `@RequirePermission()` decorator; resolves ABAC permissions from auth-service (cached 5 min); evaluates conditions; attaches `request.abacFilters`
-
-### JwtAuthGuard
-
-Automatically applied to **all routes**. Extracts the Bearer token, verifies it against Keycloak's JWKS endpoint, and attaches decoded claims to `request.user`.
-
-**To skip authentication on specific routes:**
+### Decorators
 
 ```typescript
-import { Public } from '@cargoez/infrastructure';
-
-@Get('health')
-@Public()   // ← No JWT required
-health() { ... }
-```
-
-### @RequirePermission() Decorator (Primary Authorization)
-
-`@RequirePermission()` is the primary authorization mechanism for all business operations. The auth-service ABAC database is the single source of truth for who can do what.
-
-```typescript
-import { RequirePermission } from '@cargoez/infrastructure';
-
-@Post()
-@RequirePermission('user-management.users.create')
-async create(@Body() dto) { ... }
-
-@Put(':id')
-@RequirePermission('user-management.users.update')
-async update(@Param('id') id) { ... }
-
-@Get()
-async findAll() { ... }           // Any authenticated user (no decorator)
-```
-
-The `PermissionsGuard` extracts the user's Keycloak roles from the JWT, calls `/resolve-permissions?roles=...` on auth-service, checks if the resolved set contains the required permission key, evaluates ABAC conditions (tenant isolation, ownership, etc.), and attaches filters to the request context. See [RBAC-ABAC.md](RBAC-ABAC.md) for full documentation.
-
-### @Roles() Decorator (Area-Level Only)
-
-`@Roles()` is reserved for **area-level segregation** — entire controllers that only certain user types should ever access. It should NOT be used on individual CRUD methods (that's what `@RequirePermission` is for).
-
-```typescript
-import { Roles } from '@cargoez/infrastructure';
-
-@Controller('system/diagnostics')
-@Roles('super-admin')  // Only super-admin can access this entire area
-export class DiagnosticsController { ... }
-```
-
-### Request Context
-
-The `ContextInterceptor` (set globally in `main.ts`) extracts JWT claims into `RequestContext`, available anywhere:
-
-```typescript
-import { getContext } from '@cargoez/infrastructure';
-
-const ctx = getContext();
-// { requestId, userId, userEmail, roles, tenantId, timestamp }
+@Public()                                 // Skip JWT verification
+@RequirePermission('freight.create')      // ABAC-controlled (primary authorization)
 ```
 
 ---
 
 ## 15. Route Protection Reference
 
-### Pattern (NestJS Decorators — Pure ABAC)
-
 ```typescript
-import { Controller, Get, Post, Put, Delete } from '@nestjs/common';
-import { Public, RequirePermission } from '@cargoez/infrastructure';
-
-@Controller('users')
-export class UsersController {
+@Controller('shipments')
+export class ShipmentsController {
   @Get('health')
-  @Public()                          // No auth required
+  @Public()                                    // No auth required
   health() { ... }
 
-  @Get()                             // Any authenticated user
+  @Get()                                       // Any authenticated user
   findAll() { ... }
 
-  @Get('me')                         // Any authenticated user
-  getMe() { ... }
-
   @Post()
-  @RequirePermission('user-management.users.create')   // ABAC-controlled
+  @RequirePermission('freight.create')         // ABAC-controlled
   create(@Body() dto) { ... }
 
   @Put(':id')
-  @RequirePermission('user-management.users.update')   // ABAC-controlled
+  @RequirePermission('freight.update')         // ABAC-controlled
   update(@Param('id') id, @Body() dto) { ... }
 
   @Delete(':id')
-  @RequirePermission('user-management.users.delete')   // ABAC-controlled
+  @RequirePermission('freight.delete')         // ABAC-controlled
   remove(@Param('id') id) { ... }
 }
 ```
-
-### How Permission Checking Works
-
-`@RequirePermission('module.screen.operation')` triggers the `PermissionsGuard` which:
-1. Extracts the user's Keycloak realm roles from the JWT (`realm_access.roles`)
-2. Calls `auth-service/resolve-permissions?roles=admin,user` to get the permission set
-3. Checks if the required permission key exists in the resolved set
-4. Evaluates any ABAC conditions (tenant isolation, ownership, time window, etc.)
-5. If conditions produce filters, attaches them to `request.abacFilters` for `BaseRepository`
-
-Results are cached for 5 minutes per unique role combination.
-
-### When to Use @Roles() vs @RequirePermission()
-
-| Decorator | Use Case | Example |
-|-----------|----------|---------|
-| `@RequirePermission()` | All business CRUD operations | `@RequirePermission('user-management.users.create')` |
-| `@Roles()` | Area-level segregation (entire controller) | `@Roles('super-admin')` on a diagnostics controller |
-| `@Public()` | Skip authentication entirely | Health checks, public endpoints |
-| _(none)_ | Any authenticated user | Read/list endpoints |
 
 ---
 
@@ -998,75 +606,40 @@ Results are cached for 5 minutes per unique role combination.
 
 ### Authentication Errors (401)
 
-**No token provided:**
-
 ```json
 {
   "success": false,
   "messageCode": "UNAUTHORIZED",
   "error": "Authentication required",
-  "statusCode": 401,
-  "timestamp": "2026-02-26T06:00:00.000Z"
-}
-```
-
-**Invalid or malformed token:**
-
-```json
-{
-  "success": false,
-  "messageCode": "UNAUTHORIZED",
-  "error": "Authentication required",
-  "statusCode": 401,
-  "timestamp": "2026-02-26T06:00:00.000Z"
-}
-```
-
-**Expired token:**
-
-```json
-{
-  "success": false,
-  "messageCode": "TOKEN_EXPIRED",
-  "error": "Token has expired",
-  "statusCode": 401,
-  "timestamp": "2026-02-26T06:00:00.000Z"
+  "statusCode": 401
 }
 ```
 
 ### Authorization Errors (403)
-
-**Valid token but insufficient role:**
 
 ```json
 {
   "success": false,
   "messageCode": "FORBIDDEN",
   "error": "You do not have permission to perform this action",
-  "statusCode": 403,
-  "timestamp": "2026-02-26T06:00:00.000Z"
+  "statusCode": 403
 }
 ```
 
-### Handling in Frontend
+### Frontend Error Handling
 
 ```typescript
-// Centralized error handler
 async function apiCall(url: string, options: RequestInit) {
   const response = await fetch(url, options);
 
   if (response.status === 401) {
-    // Token expired or invalid — trigger re-login
-    auth.signinRedirect();
+    auth.signinRedirect(); // Token expired — re-login
     return;
   }
-
   if (response.status === 403) {
-    // User doesn't have permission — show message
     showError('You do not have permission for this action');
     return;
   }
-
   return response.json();
 }
 ```
@@ -1078,28 +651,24 @@ async function apiCall(url: string, options: RequestInit) {
 ### Backend Services (.env)
 
 ```env
-# Required for authentication
 KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
-KEYCLOAK_AUDIENCE=cargoez-api
-
-# Remove or comment to disable auth entirely
-# KEYCLOAK_ISSUER=http://localhost:8080/realms/cargoez
+ADMIN_SERVICE_URL=http://localhost:3001
 ```
 
 ### Frontend Apps (.env)
 
 ```env
-# React / Vite
+# SysAdmin Portal
+VITE_KEYCLOAK_URL=http://localhost:8080
+VITE_KEYCLOAK_REALM=cargoez
+VITE_KEYCLOAK_CLIENT_ID=cargoez-admin
+VITE_API_URL=http://localhost:3001
+
+# Tenant Portal
 VITE_KEYCLOAK_URL=http://localhost:8080
 VITE_KEYCLOAK_REALM=cargoez
 VITE_KEYCLOAK_CLIENT_ID=cargoez-web
-VITE_API_URL=http://localhost:3001
-
-# Angular
-KEYCLOAK_URL=http://localhost:8080
-KEYCLOAK_REALM=cargoez
-KEYCLOAK_CLIENT_ID=cargoez-web
-API_URL=http://localhost:3001
+VITE_API_URL=http://localhost:3002
 ```
 
 ### Production Checklist
@@ -1107,12 +676,10 @@ API_URL=http://localhost:3001
 | Setting | Development | Production |
 |---------|-------------|------------|
 | `KEYCLOAK_ISSUER` | `http://localhost:8080/realms/cargoez` | `https://auth.cargoez.com/realms/cargoez` |
-| `sslRequired` (Keycloak) | `none` | `external` or `all` |
-| Redirect URIs | `http://localhost:*` | `https://app.cargoez.com/*` |
+| Redirect URIs | `http://localhost:*` | `https://admin.cargoez.com/*`, `https://app.cargoez.com/*` |
 | Admin password | `admin` | Strong, unique password |
-| User passwords | Simple test passwords | Enforced password policy |
-| Token lifespan | 300s (5 min) | 300s or shorter |
 | HTTPS | Not required | **Required** |
+| Token lifespan | 300s (5 min) | 300s or shorter |
 
 ---
 
@@ -1122,10 +689,9 @@ API_URL=http://localhost:3001
 
 1. **Never store or log tokens** — they are sensitive credentials
 2. **Always validate tokens server-side** — never trust the client
-3. **Use `@RequirePermission()` on all write endpoints** — even if the frontend hides buttons. The auth-service ABAC database is the single source of truth for authorization
-4. **Keep `KEYCLOAK_AUDIENCE` set** — prevents tokens from other clients being used
-5. **CORS is configured with an explicit origin whitelist** — only allowed frontend origins can make API calls (no wildcard `*`)
-6. **Do not use `@Roles()` on individual CRUD methods** — use `@RequirePermission()` instead. Reserve `@Roles()` for area-level controller gates only
+3. **Use `@RequirePermission()` on all write endpoints** — the ABAC database is the single source of truth
+4. **Do not put tenant_uid in JWT** — always resolve via admin-service
+5. **CORS is configured with explicit origin whitelist** — no wildcard `*`
 
 ### For Frontend Developers
 
@@ -1133,15 +699,13 @@ API_URL=http://localhost:3001
 2. **Store tokens in memory only** — avoid localStorage for access tokens
 3. **Use `sessionStorage` for OIDC state** — cleared when browser tab closes
 4. **Handle 401 by re-authenticating** — tokens expire every 5 minutes
-5. **Never expose tokens in URLs** — use Authorization header only
-6. **Use a library** — don't implement OAuth flows manually
+5. **Use the correct client ID** — `cargoez-admin` for SysAdmin, `cargoez-web` for Tenant portal
 
 ### For Mobile Developers
 
 1. **Use system browser for login** — never embed a WebView for auth
 2. **Store tokens in secure storage** — Keychain (iOS) / EncryptedSharedPreferences (Android)
 3. **Always use PKCE** — mandatory for mobile apps
-4. **Handle deep links securely** — validate the callback URL scheme
 
 ---
 
@@ -1150,36 +714,27 @@ API_URL=http://localhost:3001
 ### "401 Unauthorized" on every request
 
 1. **Check if Keycloak is running:** `curl http://localhost:8080/realms/cargoez`
-2. **Check if KEYCLOAK_ISSUER is set:** look in service `.env` file
-3. **Check if the token is expired:** tokens last only 5 minutes
-4. **Check if the audience matches:** token `aud` must match `KEYCLOAK_AUDIENCE`
+2. **Check if KEYCLOAK_ISSUER is set** in service `.env` file
+3. **Check if the token is expired** — tokens last only 5 minutes
+4. **Check if admin-service is running** — required for resolve-context
 
 ### "403 Forbidden" when calling an endpoint
 
-1. **Check user roles:** decode the JWT at [jwt.io](https://jwt.io) and look at `realm_access.roles`
-2. **Check route requirements:** look at `@RequirePermission('...')` in the controller, and verify the user's role has that permission assigned in auth-service
-3. **Try with admin user:** get a token with `username=admin&password=admin123`
+1. **Decode the JWT** at [jwt.io](https://jwt.io) and check `realm_access.roles`
+2. **Verify the user has the required permission** in the tenant DB (role_permissions table)
+3. **Check resolve-context** — call admin-service directly to see what permissions are returned
+4. **Check cache** — permissions are cached 5 min; recent permission changes may not be reflected
 
-### Token request returns error
+### resolve-context returns empty permissions
 
-| Error | Cause | Fix |
-|-------|-------|-----|
-| `invalid_client` | Wrong `client_id` | Use `cargoez-api` for Postman, `cargoez-web` for frontend |
-| `invalid_grant` | Wrong username/password | Check credentials in test users table |
-| `unauthorized_client` | Client doesn't support the grant type | `cargoez-web` uses PKCE (not password grant) — use `cargoez-api` for Postman |
+1. **Check the user exists in admin_db** — the keycloak_sub must be mapped to a user record
+2. **Check tenant assignment** — user must be linked to a tenant
+3. **Check role_permissions in tenant DB** — the user's role must have permissions assigned
 
 ### CORS errors from frontend
 
-1. **Check Keycloak web origins:** in `cargoez-realm.json`, ensure your frontend URL is in `webOrigins`
-2. **Check service CORS origin whitelist:** each service's `main.ts` uses `app.enableCors({ origin: [...] })` with an explicit list of allowed origins — verify your port is included
-3. **Check API Portal CORS:** `apps/api-portal/src/main.ts` has an `ALLOWED_ORIGINS` array — verify your port is included
-4. **Check redirect URI:** your callback URL must be in `redirectUris`
-
-### "PKCE code_challenge required" error
-
-The `cargoez-web` and `cargoez-mobile` clients enforce PKCE. If you get this error:
-- Your OIDC library is not sending `code_challenge` — enable PKCE in its config
-- You're using the wrong client — use `cargoez-api` for direct password grants
+1. **Check Keycloak web origins** — ensure your frontend URL is in `webOrigins`
+2. **Check service CORS origin whitelist** — each service's `main.ts` has `app.enableCors({ origin: [...] })`
 
 ---
 
@@ -1188,25 +743,18 @@ The `cargoez-web` and `cargoez-mobile` clients enforce PKCE. If you get this err
 | Term | Definition |
 |------|------------|
 | **OAuth 2.0** | Industry standard protocol for authorization |
-| **OIDC (OpenID Connect)** | Identity layer on top of OAuth 2.0 — adds user profile info |
+| **OIDC (OpenID Connect)** | Identity layer on top of OAuth 2.0 |
 | **Keycloak** | Open-source identity and access management server |
-| **JWT (JSON Web Token)** | Compact, URL-safe token format for securely transmitting claims |
-| **JWKS (JSON Web Key Set)** | Endpoint that publishes public keys for JWT signature verification |
-| **PKCE (Proof Key for Code Exchange)** | OAuth 2.0 extension that protects the Authorization Code flow from interception attacks |
-| **ROPC (Resource Owner Password Credentials)** | OAuth 2.0 flow where the client sends username/password directly (for testing only) |
-| **Client Credentials** | OAuth 2.0 flow for service-to-service auth (no user involved) |
-| **Access Token** | Short-lived JWT (5 min) sent with every API request |
-| **Refresh Token** | Longer-lived token (30 min) used to get new access tokens without re-login |
-| **Realm** | A Keycloak namespace containing users, roles, and clients |
-| **Client** | An application registered in Keycloak (web app, mobile app, service) |
-| **Public Client** | A client that cannot keep a secret (browser, mobile) — uses PKCE |
-| **Confidential Client** | A client that can keep a secret (backend service) — uses client_secret |
-| **Issuer** | The Keycloak URL that issued the token (verified by backend) |
-| **Audience** | The intended recipient of the token (verified by backend) |
-| **RS256** | RSA Signature with SHA-256 — the algorithm used to sign JWTs |
-| **S256** | SHA-256 — the hash method used for PKCE code challenges |
-| **Bearer Token** | An access token sent in the `Authorization: Bearer <token>` header |
-| **Deep Link** | A URL scheme (e.g., `cargoez://callback`) that opens a mobile app |
+| **JWT (JSON Web Token)** | Compact token format for transmitting claims |
+| **JWKS (JSON Web Key Set)** | Endpoint that publishes public keys for JWT verification |
+| **PKCE** | OAuth 2.0 extension protecting Authorization Code flow from interception |
+| **resolve-context** | admin-service internal endpoint combining user identity, DB config, and permissions |
+| **keycloak_sub** | The `sub` claim in JWT — Keycloak's unique user ID |
+| **tenant_uid** | CargoEz tenant identifier — resolved by admin-service, not stored in JWT |
+| **RequestContext** | AsyncLocalStorage-based context populated by ContextInterceptor |
+| **TenantConnectionManager** | Resolves the correct tenant DB connection at runtime |
+| **ABAC** | Attribute-Based Access Control — permission conditions evaluated at runtime |
+| **Realm Role** | Keycloak role defining user type (sys_admin, tenant_admin, etc.) |
 
 ---
 
@@ -1214,29 +762,31 @@ The `cargoez-web` and `cargoez-mobile` clients enforce PKCE. If you get this err
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    TOKEN ENDPOINTS                               │
+│                    KEYCLOAK ENDPOINTS                             │
 ├─────────────────────────────────────────────────────────────────┤
 │ Token URL:     POST http://localhost:8080/realms/cargoez/        │
 │                protocol/openid-connect/token                     │
-│ Auth URL:      http://localhost:8080/realms/cargoez/              │
-│                protocol/openid-connect/auth                      │
 │ JWKS URL:      http://localhost:8080/realms/cargoez/              │
 │                protocol/openid-connect/certs                     │
 │ Discovery:     http://localhost:8080/realms/cargoez/              │
 │                .well-known/openid-configuration                  │
 │ Admin:         http://localhost:8080/admin (admin / admin)        │
 ├─────────────────────────────────────────────────────────────────┤
-│                    CLIENT IDS                                    │
+│                    CLIENTS                                       │
 ├─────────────────────────────────────────────────────────────────┤
-│ Postman/curl:  cargoez-api     (ROPC, direct password grant)     │
-│ Web frontend:  cargoez-web     (Authorization Code + PKCE)       │
-│ Mobile app:    cargoez-mobile  (Authorization Code + PKCE)       │
-│ Service-to-svc: cargoez-service (Client Credentials)             │
+│ SysAdmin:    cargoez-admin   (PKCE — admin.cargoez.com)          │
+│ Tenant:      cargoez-web     (PKCE — app.cargoez.com)            │
 ├─────────────────────────────────────────────────────────────────┤
-│                    TEST USERS                                    │
+│                    REALM ROLES                                   │
 ├─────────────────────────────────────────────────────────────────┤
-│ admin / admin123     → roles: admin, user                        │
-│ manager / manager123 → roles: manager, user                      │
-│ testuser / test123   → roles: user                               │
+│ sys_admin       → Platform administrator                         │
+│ tenant_admin    → Tenant administrator                           │
+│ app_customer    → Standard user                                  │
+│ branch_customer → Branch-level user                              │
+├─────────────────────────────────────────────────────────────────┤
+│                    INTERNAL                                      │
+├─────────────────────────────────────────────────────────────────┤
+│ resolve-context: GET admin-service/internal/resolve-context      │
+│ Cache TTL:       5 minutes per keycloak_sub                      │
 └─────────────────────────────────────────────────────────────────┘
 ```

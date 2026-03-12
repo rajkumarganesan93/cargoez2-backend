@@ -1,6 +1,6 @@
 import { Knex } from 'knex';
-import { BaseEntity, IBaseRepository, PaginationOptions, PaginatedResult } from '@cargoez/domain';
-import { getCurrentUserIdOrNull, getCurrentTenantIdOrNull, getContextOrNull } from '../context/request-context';
+import { BaseEntity, IBaseRepository, PaginationFindAllOptions, PaginatedResult } from '@cargoez/domain';
+import { getCurrentUserIdOrNull, getCurrentTenantUidOrNull, getContextOrNull } from '../context/request-context';
 import { domainEventBus } from '../events/domain-event-bus';
 
 export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepository<T> {
@@ -13,15 +13,17 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
   protected mapToDb(entity: Record<string, any>, isCreate = false): Record<string, any> {
     const mapped: Record<string, any> = {};
     for (const [key, value] of Object.entries(entity)) {
+      if (key === 'uid' && !isCreate) continue;
       const dbCol = this.columnMap[key] || this.camelToSnake(key);
       mapped[dbCol] = value;
     }
     const userId = getCurrentUserIdOrNull() ?? 'anonymous';
-    const tenantId = getCurrentTenantIdOrNull();
+    const tenantUid = getCurrentTenantUidOrNull();
     if (isCreate) {
       mapped['created_by'] = userId;
       mapped['modified_by'] = userId;
-      if (tenantId) mapped['tenant_id'] = tenantId;
+      if (tenantUid) mapped['tenant_uid'] = tenantUid;
+      if (mapped['is_active'] === undefined) mapped['is_active'] = true;
     } else {
       mapped['modified_by'] = userId;
     }
@@ -59,13 +61,18 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
     return query;
   }
 
-  async findAll(options: PaginationOptions = {}): Promise<PaginatedResult<T>> {
-    const { page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'desc', search, searchFields } = options;
+  async findAll(options: PaginationFindAllOptions = {}): Promise<PaginatedResult<T>> {
+    const { page = 1, limit = 10, sortBy = 'created_at', sortOrder = 'desc', search, searchFields, includeInactive = false } = options;
     const offset = (page - 1) * limit;
     const dbSortBy = this.columnMap[sortBy] || this.camelToSnake(sortBy);
 
     let query = this.knex(this.table);
     let countQuery = this.knex(this.table).count('* as total');
+
+    if (!includeInactive) {
+      query = query.where(`${this.table}.is_active`, true);
+      countQuery = countQuery.where(`${this.table}.is_active`, true);
+    }
 
     query = this.applyAbacFilters(query);
     countQuery = this.applyAbacFilters(countQuery);
@@ -98,8 +105,8 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
     };
   }
 
-  async findById(id: string): Promise<T | null> {
-    const row = await this.knex(this.table).where('id', id).first();
+  async findByUid(uid: string): Promise<T | null> {
+    const row = await this.knex(this.table).where('uid', uid).first();
     return row ? this.mapFromDb(row) : null;
   }
 
@@ -111,33 +118,33 @@ export abstract class BaseRepository<T extends BaseEntity> implements IBaseRepos
     return result;
   }
 
-  async update(id: string, entity: Partial<T>): Promise<T> {
+  async update(uid: string, entity: Partial<T>): Promise<T> {
     const mapped = this.mapToDb(entity as Record<string, any>, false);
-    let query = this.knex(this.table).where('id', id);
+    let query = this.knex(this.table).where('uid', uid);
     query = this.applyAbacFilters(query);
     const [row] = await query.update(mapped).returning('*');
-    if (!row) throw new Error(`Entity not found: ${id}`);
+    if (!row) throw new Error(`Entity not found: ${uid}`);
     const result = this.mapFromDb(row);
     this.emitEvent('updated', result);
     return result;
   }
 
-  async delete(id: string): Promise<void> {
-    let query = this.knex(this.table).where('id', id);
+  async delete(uid: string): Promise<void> {
+    let query = this.knex(this.table).where('uid', uid);
     query = this.applyAbacFilters(query);
     const deleted = await query.del();
-    if (!deleted) throw new Error(`Entity not found: ${id}`);
-    this.emitEvent('deleted', { id } as unknown as T);
+    if (!deleted) throw new Error(`Entity not found: ${uid}`);
+    this.emitEvent('deleted', { uid } as unknown as T);
   }
 
   private emitEvent(action: string, data: T): void {
     domainEventBus.emit({
       entity: this.table,
       action,
-      entityId: (data as any).id || '',
+      entityId: (data as any).uid || '',
       data,
       actor: getCurrentUserIdOrNull() ?? 'anonymous',
-      tenantId: getCurrentTenantIdOrNull() ?? undefined,
+      tenantId: getCurrentTenantUidOrNull() ?? undefined,
       timestamp: new Date(),
     });
   }

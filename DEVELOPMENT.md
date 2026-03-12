@@ -1,73 +1,125 @@
 # CargoEz Backend — Development Guide
 
-> Nx monorepo with NestJS microservices, Clean Architecture, PostgreSQL, and Keycloak authentication.
+> Nx monorepo with NestJS microservices, Clean Architecture, PostgreSQL, Keycloak authentication, and multi-tenant SaaS database isolation.
 
 ---
 
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
-2. [Clean Architecture Layers](#clean-architecture-layers)
-3. [Adding a New Microservice](#adding-a-new-microservice)
-4. [Adding a New Entity to an Existing Service](#adding-a-new-entity-to-an-existing-service)
-5. [Database & Migrations](#database--migrations)
-6. [Request Context](#request-context)
-7. [Authentication & Authorization](#authentication--authorization)
-8. [API Response Standards](#api-response-standards)
-9. [Real-Time Data Sync](#real-time-data-sync)
-10. [Shared Libraries](#shared-libraries)
-11. [Nx Build System](#nx-build-system)
-12. [Coding Conventions](#coding-conventions)
+2. [BaseEntity & Audit Columns](#baseentity--audit-columns)
+3. [Clean Architecture Layers](#clean-architecture-layers)
+4. [Repositories: BaseRepository & TenantBaseRepository](#repositories-baserepository--tenantbaserepository)
+5. [Adding a New Entity to an Existing Service](#adding-a-new-entity-to-an-existing-service)
+6. [Database & Migrations](#database--migrations)
+7. [Request Context & resolve-context](#request-context--resolve-context)
+8. [Guard Pipeline](#guard-pipeline)
+9. [Permission Key Format & @RequirePermission](#permission-key-format--requirepermission)
+10. [API Response Standards](#api-response-standards)
+11. [Real-Time Data Sync](#real-time-data-sync)
+12. [Shared Libraries](#shared-libraries)
+13. [Nx Build System](#nx-build-system)
+14. [Coding Conventions](#coding-conventions)
 
 ---
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    API Portal (:4000)                     │
-│           Swagger UI + Reverse Proxy                     │
-│  ┌──────────────────┐  ┌──────────────────────────┐     │
-│  │ Service Dropdown  │  │ Proxies API calls to     │     │
-│  │ (select service)  │  │ correct service port     │     │
-│  └──────────────────┘  └──────────────────────────┘     │
-└────────────┬────────────────────────┬───────────────────┘
-             │                        │
-   ┌─────────▼─────────┐   ┌─────────▼──────────────┐
-   │ user-service :3001 │   │ auth-service :3002     │
-   │ DB: user_service_db│   │ DB: auth_db            │
-   │ Table: users       │   │ Tables: roles,         │
-   │                    │   │   modules, screens,    │
-   │                    │   │   operations,          │
-   │                    │   │   permissions,          │
-   │                    │   │   role_permissions      │
-   └─────────┬──────────┘   └──────────┬───────────┘
-             │                         │
-   ┌─────────▼────────────────────────▼──────────────┐
-   │              Shared Libraries                    │
-   │  @cargoez/domain  @cargoez/api                  │
-   │  @cargoez/shared  @cargoez/infrastructure       │
-   └─────────────────────────────────────────────────┘
-             │
-   ┌─────────▼─────────┐   ┌─────────────────┐
-   │   PostgreSQL       │   │   Keycloak       │
-   │   :5432            │   │   :8080          │
-   └────────────────────┘   └─────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                      Frontend Portals                                │
+│  admin.cargoez.com (SysAdmin)         app.cargoez.com (Tenant)      │
+└──────────┬──────────────────────────────────┬────────────────────────┘
+           │                                  │
+┌──────────▼──────────┐  ┌───────────────────▼────────────────────────┐
+│  admin-service :3001│  │  freight :3002  contacts :3003  books :3004│
+│  admin_db (24 tbl)  │  │  Tenant DBs only via TenantConnectionMgr  │
+│  + tenant DBs       │  │                                            │
+│                     │  │  ContextInterceptor calls                  │
+│  /internal/         │  │  admin-service /internal/resolve-context   │
+│  resolve-context    │  │  once per request (cached 5 min)           │
+└──────────┬──────────┘  └───────────────────┬────────────────────────┘
+           │                                  │
+┌──────────▼──────────────────────────────────▼────────────────────────┐
+│  PostgreSQL :5432                                                    │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐                       │
+│  │ admin_db │  │shared_db │  │tenant_code_db│  (per-tenant)          │
+│  └──────────┘  └──────────┘  └──────────────┘                       │
+└──────────────────────────────────┬───────────────────────────────────┘
+                                   │
+                          ┌────────▼────────┐
+                          │  Keycloak :8080  │
+                          │  cargoez realm   │
+                          └─────────────────┘
 ```
 
 ### Key Principles
 
-- **Microservices**: Each service is independently deployable with its own database
-- **Clean Architecture**: 4-layer separation (Domain → Application → Infrastructure → Presentation)
-- **Dependency Inversion**: Use cases depend on domain interfaces; infrastructure provides implementations
-- **Shared Libraries**: Common concerns (auth, DB, logging) are shared but not coupled
+- **Multi-tenant SaaS**: admin_db for platform management; shared_db / tenant_code_db for tenant data
+- **Clean Architecture**: 4-layer separation (Domain -> Application -> Infrastructure -> Presentation)
+- **Single resolve-context**: One internal call resolves user identity, DB connection, and permissions
+- **Pure ABAC**: Permission keys as `module.operation`, evaluated from RequestContext (no HTTP call at guard level)
 - **Convention over Configuration**: All services follow identical structure and patterns
+
+---
+
+## BaseEntity & Audit Columns
+
+Every entity in the system extends `BaseEntity` from `@cargoez/domain`:
+
+```typescript
+// libs/domain/src/entities/base.entity.ts
+export interface BaseEntity {
+  uid: string;            // UUID primary key
+  tenant_uid: string;     // Tenant identifier
+  is_active: boolean;     // Soft-delete flag (default: true)
+  created_at: Date;       // Record creation timestamp
+  modified_at: Date;      // Last modification timestamp
+  created_by: string;     // UUID of creating user
+  modified_by: string;    // UUID of last modifier
+}
+```
+
+### Migration Template
+
+Every table must include these 7 base columns:
+
+```typescript
+export async function up(knex: Knex): Promise<void> {
+  await knex.schema.createTable('shipments', (table) => {
+    table.uuid('uid').primary().defaultTo(knex.fn.uuid());
+    table.uuid('tenant_uid').notNullable().index();
+    table.boolean('is_active').notNullable().defaultTo(true);
+    table.timestamp('created_at').defaultTo(knex.fn.now());
+    table.timestamp('modified_at').defaultTo(knex.fn.now());
+    table.uuid('created_by').nullable();
+    table.uuid('modified_by').nullable();
+
+    // Entity-specific columns
+    table.string('tracking_number').notNullable();
+    table.string('origin').notNullable();
+    table.string('destination').notNullable();
+    table.decimal('weight', 10, 2).nullable();
+  });
+}
+```
+
+### Auto-populated by Repository
+
+`BaseRepository` and `TenantBaseRepository` automatically populate audit fields from `RequestContext`:
+
+| Column | Source | Populated On |
+|---|---|---|
+| `tenant_uid` | `RequestContext.tenantUid` | `save()` |
+| `created_by` | `RequestContext.userId` | `save()` |
+| `modified_by` | `RequestContext.userId` | `save()`, `update()` |
+| `modified_at` | `new Date()` | `update()` |
 
 ---
 
 ## Clean Architecture Layers
 
-Every microservice follows the same 4-layer structure:
+Every service follows the same 4-layer structure:
 
 ### Layer 1: Domain (innermost)
 
@@ -76,27 +128,28 @@ Every microservice follows the same 4-layer structure:
 **Contains:** Entity interfaces, repository interface contracts, DI tokens
 
 ```typescript
-// domain/entities/user.entity.ts
+// domain/entities/shipment.entity.ts
 import { BaseEntity } from '@cargoez/domain';
 
-export interface User extends BaseEntity {
-  name: string;
-  email: string;
-  phone?: string;
+export interface Shipment extends BaseEntity {
+  tracking_number: string;
+  origin: string;
+  destination: string;
+  weight?: number;
 }
 ```
 
 ```typescript
-// domain/repositories/user-repository.interface.ts
+// domain/repositories/shipment-repository.interface.ts
 import { IBaseRepository } from '@cargoez/domain';
-import { User } from '../entities/user.entity';
+import { Shipment } from '../entities/shipment.entity';
 
-export const USER_REPOSITORY = 'USER_REPOSITORY';
-export type IUserRepository = IBaseRepository<User>;
+export const SHIPMENT_REPOSITORY = 'SHIPMENT_REPOSITORY';
+export type IShipmentRepository = IBaseRepository<Shipment>;
 ```
 
 **Rules:**
-- No NestJS decorators (except in the type alias)
+- No NestJS decorators
 - No database imports
 - No framework imports
 - Only `@cargoez/domain` types
@@ -108,44 +161,25 @@ export type IUserRepository = IBaseRepository<User>;
 **Contains:** One class per use case, each with an `execute()` method
 
 ```typescript
-// application/use-cases/create-user.use-case.ts
+// application/use-cases/create-shipment.use-case.ts
 import { Inject, Injectable } from '@nestjs/common';
-import { User } from '../../domain/entities/user.entity';
-import { IUserRepository, USER_REPOSITORY } from '../../domain/repositories/user-repository.interface';
+import { Shipment } from '../../domain/entities/shipment.entity';
+import { IShipmentRepository, SHIPMENT_REPOSITORY } from '../../domain/repositories/shipment-repository.interface';
 
 @Injectable()
-export class CreateUserUseCase {
-  constructor(@Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository) {}
+export class CreateShipmentUseCase {
+  constructor(@Inject(SHIPMENT_REPOSITORY) private readonly repo: IShipmentRepository) {}
 
-  execute(data: { name: string; email: string; phone?: string }): Promise<User> {
-    return this.userRepo.save(data as Partial<User>);
-  }
-}
-```
-
-```typescript
-// application/use-cases/get-user-by-id.use-case.ts
-import { Inject, Injectable } from '@nestjs/common';
-import { NotFoundException } from '@cargoez/api';
-import { IUserRepository, USER_REPOSITORY } from '../../domain/repositories/user-repository.interface';
-
-@Injectable()
-export class GetUserByIdUseCase {
-  constructor(@Inject(USER_REPOSITORY) private readonly userRepo: IUserRepository) {}
-
-  async execute(id: string) {
-    const user = await this.userRepo.findById(id);
-    if (!user) throw new NotFoundException('User');
-    return user;
+  execute(data: Partial<Shipment>): Promise<Shipment> {
+    return this.repo.save(data);
   }
 }
 ```
 
 **Rules:**
-- Inject repository via DI token (`@Inject(USER_REPOSITORY)`)
+- Inject repository via DI token (`@Inject(SHIPMENT_REPOSITORY)`)
 - Never import infrastructure implementations directly
 - Business validation and orchestration logic lives here
-- Each use case is a single `@Injectable()` class
 
 ### Layer 3: Infrastructure
 
@@ -154,25 +188,20 @@ export class GetUserByIdUseCase {
 **Contains:** Concrete repository implementations
 
 ```typescript
-// infrastructure/repositories/user.repository.ts
+// infrastructure/repositories/shipment.repository.ts
 import { Injectable } from '@nestjs/common';
 import { Knex } from 'knex';
 import { InjectKnex } from '@cargoez/shared';
-import { BaseRepository } from '@cargoez/infrastructure';
-import { User } from '../../domain/entities/user.entity';
+import { TenantBaseRepository } from '@cargoez/infrastructure';
+import { Shipment } from '../../domain/entities/shipment.entity';
 
 @Injectable()
-export class UserRepository extends BaseRepository<User> {
+export class ShipmentRepository extends TenantBaseRepository<Shipment> {
   constructor(@InjectKnex() knex: Knex) {
-    super(knex, 'users');
+    super(knex, 'shipments');
   }
 }
 ```
-
-**Rules:**
-- Extends `BaseRepository<T>` for standard CRUD
-- Database-specific logic lives here
-- Custom queries (joins, complex filters) go here as additional methods
 
 ### Layer 4: Presentation (outermost)
 
@@ -181,401 +210,371 @@ export class UserRepository extends BaseRepository<User> {
 **Contains:** Controllers, DTOs, NestJS module
 
 ```typescript
-// presentation/controllers/users.controller.ts
-@ApiTags('Users')
+// presentation/controllers/shipments.controller.ts
+@ApiTags('Shipments')
 @ApiBearerAuth()
-@Controller('users')
-export class UsersController {
+@Controller('shipments')
+export class ShipmentsController {
   constructor(
-    private readonly getAllUsers: GetAllUsersUseCase,
-    private readonly createUser: CreateUserUseCase,
-    // ...
+    private readonly createShipment: CreateShipmentUseCase,
+    private readonly getAllShipments: GetAllShipmentsUseCase,
   ) {}
 
   @Get()
   async findAll(@Query('page') page: number, ...) {
-    const result = await this.getAllUsers.execute({ page, limit, ... });
+    const result = await this.getAllShipments.execute({ page, limit, ... });
     return createSuccessResponse(MessageCode.LIST_FETCHED, result);
   }
 
   @Post()
-  @RequirePermission('user-management.users.create')
-  async create(@Body() dto: CreateUserDto) {
-    const user = await this.createUser.execute(dto);
-    return createSuccessResponse(MessageCode.CREATED, user);
+  @RequirePermission('freight.create')
+  async create(@Body() dto: CreateShipmentDto) {
+    const shipment = await this.createShipment.execute(dto);
+    return createSuccessResponse(MessageCode.CREATED, shipment);
   }
 }
 ```
 
 ```typescript
-// presentation/dto/create-user.dto.ts
-export class CreateUserDto {
-  @ApiProperty({ example: 'John Doe' })
-  @IsString()
-  name!: string;
-
-  @ApiProperty({ example: 'john@example.com' })
-  @IsEmail()
-  email!: string;
-
-  @ApiProperty({ example: '+1234567890', required: false })
-  @IsOptional()
-  @IsString()
-  phone?: string;
-}
-```
-
-```typescript
-// presentation/users.module.ts — the DI wiring point
+// presentation/shipments.module.ts
 @Module({
-  controllers: [UsersController],
+  controllers: [ShipmentsController],
   providers: [
-    { provide: USER_REPOSITORY, useClass: UserRepository },
-    CreateUserUseCase,
-    GetAllUsersUseCase,
-    GetUserByIdUseCase,
-    UpdateUserUseCase,
-    DeleteUserUseCase,
+    { provide: SHIPMENT_REPOSITORY, useClass: ShipmentRepository },
+    CreateShipmentUseCase,
+    GetAllShipmentsUseCase,
+    GetShipmentByIdUseCase,
+    UpdateShipmentUseCase,
+    DeleteShipmentUseCase,
   ],
 })
-export class UsersModule {}
+export class ShipmentsModule {}
 ```
 
-**Rules:**
-- Controllers inject use cases, never repositories
-- DTOs use `class-validator` + `@nestjs/swagger` decorators
-- The module binds domain interfaces to infrastructure implementations
-- HTTP concerns (status codes, headers) stay in the controller
+**Dependency rule:** `Presentation -> Application -> Domain <- Infrastructure`
 
 ---
 
-## Adding a New Microservice
+## Repositories: BaseRepository & TenantBaseRepository
 
-### Step 1 — Create the directory structure
+### BaseRepository
 
-```bash
-mkdir -p apps/my-service/src/{domain/entities,domain/repositories,application/use-cases,infrastructure/repositories,presentation/{controllers,dto}}
-```
-
-### Step 2 — Create project files
-
-Copy from an existing service and modify:
-- `apps/my-service/package.json` — set `name`
-- `apps/my-service/project.json` — set `name`, `sourceRoot`, build/serve targets
-- `apps/my-service/tsconfig.json` — extend from root
-- `apps/my-service/tsconfig.app.json` — app-specific TS config
-
-### Step 3 — Create the domain layer
+Used by `admin-service` for entities in `admin_db` (no tenant DB switching needed):
 
 ```typescript
-// src/domain/entities/item.entity.ts
-import { BaseEntity } from '@cargoez/domain';
+import { BaseRepository } from '@cargoez/infrastructure';
 
-export interface Item extends BaseEntity {
-  name: string;
-  description?: string;
+@Injectable()
+export class TenantRepository extends BaseRepository<Tenant> {
+  constructor(@InjectKnex() knex: Knex) {
+    super(knex, 'tenants');
+  }
 }
 ```
 
-```typescript
-// src/domain/repositories/item-repository.interface.ts
-import { IBaseRepository } from '@cargoez/domain';
-import { Item } from '../entities/item.entity';
+### TenantBaseRepository
 
-export const ITEM_REPOSITORY = 'ITEM_REPOSITORY';
-export type IItemRepository = IBaseRepository<Item>;
-```
-
-### Step 4 — Create use cases, repository, controller, DTOs, module
-
-Follow the patterns shown in [Clean Architecture Layers](#clean-architecture-layers) above.
-
-### Step 5 — Create main.ts and app.module.ts
+Used by `freight-service`, `contacts-service`, and `books-service` for entities in tenant databases. Automatically resolves the tenant DB connection via `TenantConnectionManager`:
 
 ```typescript
-// src/main.ts
-import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { join } from 'path';
-import { config } from 'dotenv';
-import { AppModule } from './app.module';
-import { GlobalExceptionFilter, PinoLoggerService, ContextInterceptor } from '@cargoez/infrastructure';
+import { TenantBaseRepository } from '@cargoez/infrastructure';
 
-config({ path: join(process.cwd(), '.env') });
-
-async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
-  const logger = new PinoLoggerService();
-  app.useLogger(logger);
-  app.enableCors({
-    origin: [
-      'http://localhost:3000', 'http://localhost:5173',
-      'http://localhost:5174', 'http://localhost:5175',
-      'http://localhost:5176', 'http://localhost:5177',
-      'http://localhost:4200', 'http://localhost:8100',
-    ],
-    credentials: true,
-  });
-  app.setGlobalPrefix('my-service');
-  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
-  app.useGlobalFilters(new GlobalExceptionFilter());
-  app.useGlobalInterceptors(new ContextInterceptor());
-
-  const port = process.env['MY_SERVICE_PORT'] || 3002;
-
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('My Service')
-    .setDescription('Description here')
-    .setVersion('1.0.0')
-    .addServer(`http://localhost:${port}`, 'My Service (direct)')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('my-service/api-docs', app, document);
-
-  app.getHttpAdapter().get('/my-service/api-docs/json', (_req: any, res: any) => {
-    res.json(document);
-  });
-
-  await app.listen(port);
-  logger.log(`My Service running on http://localhost:${port}/my-service`);
-}
-
-bootstrap();
-```
-
-```typescript
-// src/app.module.ts
-import { Module } from '@nestjs/common';
-import { DatabaseModule } from '@cargoez/shared';
-import { AuthModule, RealtimeModule } from '@cargoez/infrastructure';
-import { ItemsModule } from './presentation/items.module';
-import { HealthController } from './presentation/controllers/health.controller';
-
-@Module({
-  imports: [
-    DatabaseModule.forRoot({ connectionPrefix: 'MY_SERVICE' }),
-    AuthModule,
-    RealtimeModule,
-    ItemsModule,
-  ],
-  controllers: [HealthController],
-})
-export class AppModule {}
-```
-
-### Step 6 — Register in API Portal
-
-Add to `SERVICES` array in `apps/api-portal/src/main.ts`:
-
-```typescript
-{
-  name: 'My Service',
-  slug: 'my-service',
-  prefix: '/my-service',
-  target: `http://localhost:${MY_SERVICE_PORT}`,
-  docsUrl: `http://localhost:${MY_SERVICE_PORT}/my-service/api-docs/json`,
+@Injectable()
+export class ShipmentRepository extends TenantBaseRepository<Shipment> {
+  constructor(@InjectKnex() knex: Knex) {
+    super(knex, 'shipments');
+  }
 }
 ```
 
-### Step 7 — Add environment variables
-
-In `.env`:
-
-```env
-MY_SERVICE_DB_NAME=my_service_db
-MY_SERVICE_PORT=3002
-# Uncomment to use a different database server:
-# MY_SERVICE_DB_HOST=other-host.rds.amazonaws.com
-# MY_SERVICE_DB_PORT=5432
-# MY_SERVICE_DB_USER=my_svc_user
-# MY_SERVICE_DB_PASSWORD="secret"
-```
-
-### Step 8 — Add scripts to root `package.json`
-
-```json
-"start:myservice": "nx serve my-service",
-"dev:myservice": "node -r ./register-paths.js dist/apps/my-service/src/main.js"
-```
+`TenantBaseRepository` extends `BaseRepository` with:
+- Automatic tenant DB connection resolution from `RequestContext`
+- `tenant_uid` filtering on all queries
+- Tenant-scoped CRUD operations
 
 ---
 
 ## Adding a New Entity to an Existing Service
 
-To add a new entity (e.g., `Product`) to an existing service:
+Follow this checklist to add a new entity (e.g., `Invoice` to `books-service`):
 
-1. **Domain:** Create `domain/entities/product.entity.ts` and `domain/repositories/product-repository.interface.ts`
-2. **Application:** Create use case files in `application/use-cases/` (create, get-all, get-by-id, update, delete)
-3. **Infrastructure:** Create `infrastructure/repositories/product.repository.ts` extending `BaseRepository<Product>`
-4. **Presentation:** Create controller, DTOs, and a `ProductsModule`
-5. **Import** `ProductsModule` in the service's `app.module.ts`
-6. **Create migration** for the new database table
+### Step 1 — Create the migration
+
+```typescript
+// apps/books-service/migrations/20260312000001_create_invoices.ts
+import { Knex } from 'knex';
+
+export async function up(knex: Knex): Promise<void> {
+  await knex.schema.createTable('invoices', (table) => {
+    // BaseEntity columns (required)
+    table.uuid('uid').primary().defaultTo(knex.fn.uuid());
+    table.uuid('tenant_uid').notNullable().index();
+    table.boolean('is_active').notNullable().defaultTo(true);
+    table.timestamp('created_at').defaultTo(knex.fn.now());
+    table.timestamp('modified_at').defaultTo(knex.fn.now());
+    table.uuid('created_by').nullable();
+    table.uuid('modified_by').nullable();
+
+    // Entity-specific columns
+    table.string('invoice_number').notNullable().unique();
+    table.decimal('total', 12, 2).notNullable();
+    table.string('currency', 3).defaultTo('USD');
+    table.enum('status', ['draft', 'sent', 'paid', 'cancelled']).defaultTo('draft');
+  });
+}
+
+export async function down(knex: Knex): Promise<void> {
+  await knex.schema.dropTableIfExists('invoices');
+}
+```
+
+### Step 2 — Domain layer
+
+```typescript
+// domain/entities/invoice.entity.ts
+import { BaseEntity } from '@cargoez/domain';
+
+export interface Invoice extends BaseEntity {
+  invoice_number: string;
+  total: number;
+  currency: string;
+  status: 'draft' | 'sent' | 'paid' | 'cancelled';
+}
+```
+
+```typescript
+// domain/repositories/invoice-repository.interface.ts
+import { IBaseRepository } from '@cargoez/domain';
+import { Invoice } from '../entities/invoice.entity';
+
+export const INVOICE_REPOSITORY = 'INVOICE_REPOSITORY';
+export type IInvoiceRepository = IBaseRepository<Invoice>;
+```
+
+### Step 3 — Infrastructure (repository)
+
+```typescript
+// infrastructure/repositories/invoice.repository.ts
+import { Injectable } from '@nestjs/common';
+import { Knex } from 'knex';
+import { InjectKnex } from '@cargoez/shared';
+import { TenantBaseRepository } from '@cargoez/infrastructure';
+import { Invoice } from '../../domain/entities/invoice.entity';
+
+@Injectable()
+export class InvoiceRepository extends TenantBaseRepository<Invoice> {
+  constructor(@InjectKnex() knex: Knex) {
+    super(knex, 'invoices');
+  }
+}
+```
+
+### Step 4 — Application (use cases)
+
+Create use case files in `application/use-cases/`: create, get-all, get-by-id, update, delete.
+
+### Step 5 — Presentation (controller, DTOs, module)
+
+Create controller with `@RequirePermission('books.create')` etc., DTOs with validation, and wire everything in the module.
+
+### Step 6 — Register
+
+- Import `InvoicesModule` in the service's `app.module.ts`
+- Run migrations: `pnpm migrate:books`
 
 ---
 
 ## Database & Migrations
 
-### Per-Service Database Connections
+### Database Types
 
-Each microservice can use its own database — and optionally its own database server. The `connectionPrefix` option controls which environment variables are read:
-
-| Service | Prefix | Env Vars | Default DB |
-|---|---|---|---|
-| `user-service` | `USER_SERVICE` | `USER_SERVICE_DB_HOST`, `USER_SERVICE_DB_PORT`, `USER_SERVICE_DB_USER`, `USER_SERVICE_DB_PASSWORD`, `USER_SERVICE_DB_NAME` | `user_service_db` |
-| `auth-service` | `AUTH_SERVICE` | `AUTH_SERVICE_DB_HOST`, `AUTH_SERVICE_DB_PORT`, `AUTH_SERVICE_DB_USER`, `AUTH_SERVICE_DB_PASSWORD`, `AUTH_SERVICE_DB_NAME` | `auth_db` |
-
-Each `{PREFIX}_DB_*` variable falls back to the shared `DB_*` default if not set. This means:
-- **Same server, different databases** — just set `{PREFIX}_DB_NAME`
-- **Completely different servers** — set all `{PREFIX}_DB_*` vars
-
-### DatabaseModule
-
-```typescript
-// Per-service connection: reads USER_SERVICE_DB_* env vars, falls back to DB_*
-DatabaseModule.forRoot({ connectionPrefix: 'USER_SERVICE' })
-```
-
-```env
-# .env — shared defaults
-DB_HOST=localhost
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD="password"
-
-# User Service — only overrides DB name (uses shared host/port/user/password)
-USER_SERVICE_DB_NAME=user_service_db
-
-# Auth Service — uses a completely different server (example)
-# AUTH_SERVICE_DB_HOST=other-instance.rds.amazonaws.com
-# AUTH_SERVICE_DB_PORT=5433
-# AUTH_SERVICE_DB_USER=auth_user
-# AUTH_SERVICE_DB_PASSWORD="different_password"
-# AUTH_SERVICE_DB_NAME=auth_db
-```
-
-The `useFactory` callback defers `process.env` reads to NestJS DI resolution time, ensuring `dotenv.config()` has already run.
-
-### Migrations
-
-Migrations live in each service's `migrations/` directory and use Knex:
-
-```typescript
-// apps/user-service/migrations/20240101000001_create_users.ts
-import { Knex } from 'knex';
-
-export async function up(knex: Knex): Promise<void> {
-  await knex.schema.createTable('users', (table) => {
-    table.uuid('id').primary().defaultTo(knex.fn.uuid());
-    table.string('name').notNullable();
-    table.string('email').notNullable().unique();
-    table.string('phone').nullable();
-    table.string('created_by').nullable();
-    table.string('modified_by').nullable();
-    table.string('tenant_id').nullable();
-    table.timestamp('created_at').defaultTo(knex.fn.now());
-    table.timestamp('modified_at').defaultTo(knex.fn.now());
-  });
-}
-
-export async function down(knex: Knex): Promise<void> {
-  await knex.schema.dropTableIfExists('users');
-}
-```
-
-### Audit Fields
-
-`BaseRepository` automatically populates these fields from `RequestContext`:
-
-| Column | Source | On |
+| Database | Used By | Purpose |
 |---|---|---|
-| `created_by` | `getCurrentUserId()` | `save()` |
-| `modified_by` | `getCurrentUserId()` | `save()`, `update()` |
-| `tenant_id` | `getCurrentTenantId()` | `save()` |
-| `modified_at` | `new Date()` | `update()` |
+| `admin_db` | admin-service | Central management (24 tables: tenants, branches, sys_admins, app_customers, admin roles/permissions, subscriptions, products, metadata) |
+| `shared_db` | All tenant services | Shared reference data |
+| `tenant_code_db` | All tenant services | Per-tenant isolated data |
+
+### TenantConnectionManager
+
+Tenant services don't configure a static database. Instead, `TenantConnectionManager` resolves the correct tenant DB connection at runtime from the request context (populated by `ContextInterceptor` via resolve-context).
+
+```typescript
+// Simplified flow:
+// 1. Request arrives at freight-service
+// 2. ContextInterceptor calls admin-service /internal/resolve-context
+// 3. resolve-context returns: { user, tenantDb: "tenant_acme_db", permissions }
+// 4. TenantConnectionManager creates/reuses a Knex connection to tenant_acme_db
+// 5. TenantBaseRepository uses that connection for all queries
+```
+
+### Running Migrations
+
+```bash
+pnpm migrate:admin      # admin_db — central management tables + seed
+pnpm migrate:shared     # shared_db — shared reference tables
+```
+
+Tenant database migrations are applied during tenant provisioning by admin-service.
 
 ---
 
-## Request Context
+## Request Context & resolve-context
 
-Every authenticated request has an `AsyncLocalStorage`-based context propagated through the entire call chain:
+### The resolve-context Endpoint
 
-```typescript
-interface RequestContext {
-  requestId: string;      // Auto-generated UUID per request
-  userId?: string;        // From JWT `preferred_username` or `sub`
-  userEmail?: string;     // From JWT `email`
-  roles: string[];        // From JWT `realm_access.roles`
-  tenantId?: string;      // From JWT custom claim (if configured)
-  timestamp: Date;        // Request start time
-}
+admin-service exposes a single internal endpoint that combines three concerns:
+
+```
+GET /internal/resolve-context
+Headers: Authorization: Bearer <JWT>
 ```
 
-### Accessing Context
-
-```typescript
-import { getContext, getCurrentUserId } from '@cargoez/infrastructure';
-
-// In any service, use case, or repository:
-const ctx = getContext();        // throws if no context
-const userId = getCurrentUserId(); // 'anonymous' if no user
-```
-
-### /users/me Endpoint
-
-The `GET /users/me` endpoint returns the current context extracted from the JWT:
+**Response:**
 
 ```json
 {
-  "success": true,
-  "messageCode": "FETCHED",
-  "data": {
-    "requestId": "916caa28-...",
-    "userId": "admin",
-    "userEmail": "admin@cargoez.com",
-    "roles": ["admin", "user"],
-    "tenantId": null,
-    "timestamp": "2026-03-04T07:47:24.802Z"
-  }
+  "user": {
+    "uid": "user-uuid",
+    "email": "user@tenant.com",
+    "keycloak_sub": "kc-uuid",
+    "tenant_uid": "tenant-uuid",
+    "tenant_code": "acme"
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "name": "tenant_acme_db"
+  },
+  "permissions": [
+    { "key": "freight.create", "conditions": { "tenant_isolation": true } },
+    { "key": "freight.read", "conditions": null }
+  ]
+}
+```
+
+### How It Works
+
+1. `ContextInterceptor` fires on every authenticated request
+2. Extracts `keycloak_sub` from the validated JWT
+3. Calls `admin-service /internal/resolve-context` (cached 5 min per keycloak_sub)
+4. admin-service looks up the user in `admin_db` by keycloak_sub
+5. Resolves the user's tenant, tenant DB connection info, and permissions from the tenant DB
+6. Returns the combined context
+7. `ContextInterceptor` populates `RequestContext` with all resolved data
+8. `PermissionsGuard` reads permissions directly from `RequestContext` — no additional HTTP call
+
+### RequestContext Shape
+
+```typescript
+interface RequestContext {
+  requestId: string;
+  userId: string;          // User UID from admin_db
+  userEmail: string;
+  keycloakSub: string;     // Keycloak subject ID
+  tenantUid: string;       // Tenant UID
+  tenantCode: string;      // Tenant code (used for DB name)
+  roles: string[];         // Keycloak realm roles
+  permissions: Permission[];
+  tenantDbConfig: DbConfig;
+  timestamp: Date;
 }
 ```
 
 ---
 
-## Authentication & Authorization
+## Guard Pipeline
 
-### How It Works
+Every request passes through the following pipeline in order:
 
-1. **JwtAuthGuard** (global) — Extracts the Bearer token, verifies it against Keycloak's JWKS endpoint, attaches decoded claims to `request.user`. Skipped on `@Public()` routes.
-2. **RolesGuard** (global) — Checks `@Roles()` decorator against `realm_access.roles`. No-op if no `@Roles()` present. Reserved for area-level controller gates only.
-3. **PermissionsGuard** (global) — Checks `@RequirePermission()` decorator against auth-service permissions (cached 5 min), evaluates ABAC conditions (tenant isolation, ownership, etc.), attaches `request.abacFilters` for `BaseRepository`.
-4. **ContextInterceptor** — Populates `RequestContext` from the decoded JWT (userId, email, roles, tenantId, ABAC filters).
+```
+Request
+  │
+  ▼
+┌──────────────┐
+│ JwtAuthGuard │  Validates JWT via Keycloak JWKS endpoint.
+│              │  Skipped on @Public() routes.
+│              │  Attaches decoded claims to request.user
+└──────┬───────┘
+       ▼
+┌──────────────────┐
+│ContextInterceptor│  Calls /internal/resolve-context (cached 5 min).
+│                  │  Populates RequestContext with user identity,
+│                  │  tenant DB config, and permissions.
+└──────┬───────────┘
+       ▼
+┌──────────────────┐
+│PermissionsGuard  │  Reads permissions from RequestContext (no HTTP call).
+│                  │  Checks @RequirePermission('module.operation').
+│                  │  Evaluates ABAC conditions.
+│                  │  Attaches abacFilters to request context.
+└──────┬───────────┘
+       ▼
+    Controller
+```
 
 ### Decorators
 
+| Decorator | Purpose | Example |
+|---|---|---|
+| `@Public()` | Skip JWT verification entirely | Health checks |
+| `@RequirePermission('module.operation')` | ABAC-controlled authorization | `@RequirePermission('freight.create')` |
+
+---
+
+## Permission Key Format & @RequirePermission
+
+### Format
+
+Permission keys use the `module.operation` format:
+
+```
+freight.create
+freight.read
+freight.update
+freight.delete
+contacts.create
+contacts.read
+books.export
+books.approve
+```
+
+### Usage in Controllers
+
 ```typescript
-@Public()                                            // Skip JWT verification for this route
-@RequirePermission('user-management.users.create')   // ABAC-controlled (primary authorization)
-@Roles('super-admin')                                // Area-level gate (controller-level only)
+import { RequirePermission, Public } from '@cargoez/infrastructure';
+
+@Controller('shipments')
+export class ShipmentsController {
+  @Get('health')
+  @Public()
+  health() { ... }
+
+  @Get()
+  findAll() { ... }                          // Any authenticated user
+
+  @Post()
+  @RequirePermission('freight.create')       // ABAC-controlled
+  create(@Body() dto) { ... }
+
+  @Put(':id')
+  @RequirePermission('freight.update')       // ABAC-controlled
+  update(@Param('id') id, @Body() dto) { ... }
+
+  @Delete(':id')
+  @RequirePermission('freight.delete')       // ABAC-controlled
+  remove(@Param('id') id) { ... }
+}
 ```
 
-**Authorization strategy:**
-- **`@RequirePermission()`** is the sole authorization mechanism for all business CRUD operations. The auth-service ABAC database controls who can do what.
-- **`@Roles()`** is reserved for area-level segregation only (e.g., an entire diagnostics controller). Do NOT use on individual methods.
-- Endpoints without any decorator are accessible to any authenticated user.
+### How PermissionsGuard Works
 
-> See [RBAC-ABAC.md](RBAC-ABAC.md) for the complete ABAC permission system documentation.
+1. Reads the `permissions` array from `RequestContext` (already resolved by ContextInterceptor)
+2. Checks if the required permission key exists in the array
+3. Evaluates ABAC conditions (tenant_isolation, ownership_only, etc.)
+4. If conditions produce filters, attaches them to `request.abacFilters` for `TenantBaseRepository`
+5. **No HTTP call** — everything is in-memory from the cached resolve-context response
 
-### Getting a Token
-
-```bash
-curl -X POST http://localhost:8080/realms/cargoez/protocol/openid-connect/token \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "grant_type=password&client_id=cargoez-api&username=admin&password=admin123"
-```
-
-> See [AUTHENTICATION.md](AUTHENTICATION.md) for complete OAuth flow documentation.
+> See [RBAC-ABAC.md](RBAC-ABAC.md) for the full ABAC permission system documentation.
 
 ---
 
@@ -598,9 +597,8 @@ async findAll(...) {
 ```typescript
 import { NotFoundException, AlreadyExistsException } from '@cargoez/api';
 
-// In use case:
-const user = await this.userRepo.findById(id);
-if (!user) throw new NotFoundException('User');
+const item = await this.repo.findById(id);
+if (!item) throw new NotFoundException('Shipment');
 ```
 
 ### Pagination
@@ -611,7 +609,7 @@ All list endpoints support these query parameters:
 |---|---|---|---|
 | `page` | number | `1` | Page number |
 | `limit` | number | `10` | Items per page |
-| `sortBy` | string | `createdAt` | Column to sort by |
+| `sortBy` | string | `created_at` | Column to sort by |
 | `sortOrder` | `asc` \| `desc` | `desc` | Sort direction |
 | `search` | string | — | Full-text search across specified fields |
 
@@ -621,43 +619,17 @@ All list endpoints support these query parameters:
 
 ### How It Works
 
-1. `BaseRepository` emits a `DomainEvent` via `domainEventBus` on every `save()`, `update()`, and `delete()`
+1. `BaseRepository` / `TenantBaseRepository` emits a `DomainEvent` via `domainEventBus` on every `save()`, `update()`, and `delete()`
 2. `RealtimeGateway` listens on `domainEventBus` and broadcasts to subscribed Socket.IO rooms
 3. Frontend clients subscribe to rooms and receive live `data-changed` events
-
-### Domain Event Shape
-
-```typescript
-interface DomainEvent {
-  entity: string;       // Table name (e.g., 'users')
-  action: string;       // 'created' | 'updated' | 'deleted'
-  entityId: string;     // UUID of affected record
-  data: any;            // Full entity data (or null for delete)
-  actor: string;        // userId who made the change
-  tenantId?: string;    // Tenant ID (if applicable)
-  timestamp: Date;
-}
-```
 
 ### Room Patterns
 
 | Room | Events Received |
 |---|---|
-| `entity:users` | All user CRUD events |
-| `entity:users:<uuid>` | Changes to a specific user |
-| `tenant:<tenantId>` | All events for a tenant |
-
-### Frontend Integration
-
-```typescript
-import { io } from 'socket.io-client';
-
-const socket = io('http://localhost:3001', { auth: { token } });
-socket.emit('subscribe', { room: 'entity:users' });
-socket.on('data-changed', (event) => {
-  // Refresh your data / update store
-});
-```
+| `entity:<table>` | All CRUD events for a table |
+| `entity:<table>:<uid>` | Changes to a specific record |
+| `tenant:<tenantUid>` | All events for a tenant |
 
 ---
 
@@ -665,10 +637,10 @@ socket.on('data-changed', (event) => {
 
 | Library | What It Provides |
 |---|---|
-| `@cargoez/domain` | `BaseEntity`, `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
+| `@cargoez/domain` | `BaseEntity` (uid, tenant_uid, is_active, timestamps, audit), `IBaseRepository`, `PaginationOptions`, `PaginatedResult` |
 | `@cargoez/api` | `MessageCode`, `MessageCatalog`, `createSuccessResponse()`, `AppException`, `NotFoundException` |
-| `@cargoez/shared` | `DatabaseModule.forRoot()`, `@InjectKnex()` |
-| `@cargoez/infrastructure` | `AuthModule`, `BaseRepository`, `RequestContext`, `RealtimeModule`, `PinoLoggerService`, `GlobalExceptionFilter` |
+| `@cargoez/shared` | `DatabaseModule.forRoot()`, `TenantConnectionManager`, `@InjectKnex()` |
+| `@cargoez/infrastructure` | `AuthModule`, `BaseRepository`, `TenantBaseRepository`, `RequestContext`, `ContextInterceptor`, `PermissionsGuard`, `AbacEvaluator`, `RealtimeModule`, `PinoLoggerService`, `GlobalExceptionFilter` |
 
 > See [PACKAGES.md](PACKAGES.md) for the complete export reference.
 
@@ -682,23 +654,16 @@ socket.on('data-changed', (event) => {
 pnpm build              # Build all (cached, dependency-aware)
 pnpm build:affected     # Build only what changed
 pnpm graph              # Visualize dependency graph
-npx nx build user-service   # Build a single project
-npx nx affected --graph     # See what's affected by changes
+npx nx build admin-service   # Build a single project
 ```
-
-### How Caching Works
-
-Nx caches build outputs in `.nx/cache/`. If source files haven't changed, rebuilds are instant. The dependency graph ensures libraries are built before applications that import them.
 
 ### Module Resolution at Runtime
 
 The `register-paths.js` script maps `@cargoez/*` imports to their compiled `dist/libs/` paths at runtime:
 
 ```bash
-node -r ./register-paths.js dist/apps/user-service/src/main.js
+node -r ./register-paths.js dist/apps/admin-service/src/main.js
 ```
-
-This is required because Node.js doesn't natively understand TypeScript path aliases in compiled output.
 
 ---
 
@@ -708,25 +673,25 @@ This is required because Node.js doesn't natively understand TypeScript path ali
 
 | Type | Pattern | Example |
 |---|---|---|
-| Entity | `<name>.entity.ts` | `user.entity.ts` |
-| Repository interface | `<name>-repository.interface.ts` | `user-repository.interface.ts` |
-| Repository impl | `<name>.repository.ts` | `user.repository.ts` |
-| Use case | `<action>-<name>.use-case.ts` | `create-user.use-case.ts` |
-| Controller | `<name>.controller.ts` | `users.controller.ts` |
-| DTO | `<action>-<name>.dto.ts` | `create-user.dto.ts` |
-| Module | `<name>.module.ts` | `users.module.ts` |
+| Entity | `<name>.entity.ts` | `shipment.entity.ts` |
+| Repository interface | `<name>-repository.interface.ts` | `shipment-repository.interface.ts` |
+| Repository impl | `<name>.repository.ts` | `shipment.repository.ts` |
+| Use case | `<action>-<name>.use-case.ts` | `create-shipment.use-case.ts` |
+| Controller | `<name>.controller.ts` | `shipments.controller.ts` |
+| DTO | `<action>-<name>.dto.ts` | `create-shipment.dto.ts` |
+| Module | `<name>.module.ts` | `shipments.module.ts` |
 
 ### Database Column Naming
 
-- Use `snake_case` for database columns: `created_at`, `modified_by`
-- Use `camelCase` for TypeScript properties: `createdAt`, `modifiedBy`
-- `BaseRepository` handles the conversion automatically
+- Use `snake_case` for database columns: `created_at`, `modified_by`, `tenant_uid`
+- Use `camelCase` for TypeScript properties where applicable
+- `BaseRepository` / `TenantBaseRepository` handles the conversion automatically
 
 ### Import Order
 
 1. NestJS / Node.js built-ins
 2. `@cargoez/*` shared libraries
-3. Relative imports (domain → application → infrastructure → presentation)
+3. Relative imports (domain -> application -> infrastructure -> presentation)
 
 ### Do Not
 
@@ -734,7 +699,7 @@ This is required because Node.js doesn't natively understand TypeScript path ali
 - Import database-specific code in the domain layer
 - Put business logic in controllers (use cases only)
 - Skip the `ApiResponse` envelope (always use `createSuccessResponse`)
-- Hardcode database connection details (use `connectionPrefix` in `DatabaseModule.forRoot()`)
+- Store `tenant_uid` in JWT (it's resolved via admin-service lookup)
 
 ---
 
@@ -742,9 +707,9 @@ This is required because Node.js doesn't natively understand TypeScript path ali
 
 - [README.md](./README.md) — Project overview, how to run
 - [PACKAGES.md](./PACKAGES.md) — Shared libraries reference
-- [AUTHENTICATION.md](./AUTHENTICATION.md) — Keycloak, OAuth, PKCE, tokens
+- [AUTHENTICATION.md](./AUTHENTICATION.md) — Keycloak, multi-tenant auth, resolve-context flow
 - [ERROR_CODES.md](./ERROR_CODES.md) — Message codes & error responses
-- [ARCHITECTURE-COMPARISON.md](./ARCHITECTURE-COMPARISON.md) — Express → NestJS migration analysis
+- [RBAC-ABAC.md](./RBAC-ABAC.md) — Pure ABAC permission system
 
 ---
 

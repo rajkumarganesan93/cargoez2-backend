@@ -1,0 +1,27 @@
+{
+  "name": "contacts-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/contacts-service/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/contacts-service",
+        "main": "apps/contacts-service/src/main.ts",
+        "tsConfig": "apps/contacts-service/tsconfig.app.json",
+        "rootDir": ".",
+        "assets": []
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node -r ./register-paths.js dist/apps/contacts-service/apps/contacts-service/src/main.js"
+      }
+    }
+  }
+}

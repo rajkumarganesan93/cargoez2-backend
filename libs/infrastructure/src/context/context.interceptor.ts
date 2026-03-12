@@ -5,22 +5,16 @@ import { runWithContext, RequestContext } from './request-context';
 
 @Injectable()
 export class ContextInterceptor implements NestInterceptor {
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
+  async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
-    const response = context.switchToHttp().getResponse();
-    const user = request.user;
 
-    const requestId = uuidv4();
-    response.setHeader('X-Request-Id', requestId);
-
-    const ctx: RequestContext = {
-      requestId,
-      userId: user?.preferred_username || user?.sub || undefined,
-      userEmail: user?.email || undefined,
-      roles: user?.realm_access?.roles || [],
-      tenantId: request.headers['x-tenant-id'] || undefined,
+    // Use the context set by ContextGuard, or create a minimal one
+    const ctx: RequestContext = request.requestContext || {
+      requestId: uuidv4(),
+      userId: request.user?.sub || request.user?.preferred_username,
+      userEmail: request.user?.email,
+      permissions: [],
       timestamp: new Date(),
-      abacFilters: request.abacFilters || undefined,
     };
 
     return new Observable((subscriber) => {

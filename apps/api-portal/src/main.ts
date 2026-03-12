@@ -14,17 +14,22 @@ const ALLOWED_ORIGINS = [
   'http://localhost:5175',
   'http://localhost:5176',
   'http://localhost:5177',
+  'http://localhost:5178',
   'http://localhost:4200',
   'http://localhost:8100',
 ];
 
-const USER_SERVICE_PORT = process.env['USER_SERVICE_PORT'] || 3001;
-const AUTH_SERVICE_PORT = process.env['AUTH_SERVICE_PORT'] || 3002;
+const ADMIN_SERVICE_PORT = process.env['ADMIN_SERVICE_PORT'] || 3001;
+const FREIGHT_SERVICE_PORT = process.env['FREIGHT_SERVICE_PORT'] || 3002;
+const CONTACTS_SERVICE_PORT = process.env['CONTACTS_SERVICE_PORT'] || 3003;
+const BOOKS_SERVICE_PORT = process.env['BOOKS_SERVICE_PORT'] || 3004;
 const PORTAL_PORT = process.env['API_PORTAL_PORT'] || 4000;
 
 const SERVICES = [
-  { name: 'User Service', slug: 'user-service', prefix: '/user-service', target: `http://localhost:${USER_SERVICE_PORT}`, docsUrl: `http://localhost:${USER_SERVICE_PORT}/user-service/api-docs/json` },
-  { name: 'Auth Service', slug: 'auth-service', prefix: '/auth-service', target: `http://localhost:${AUTH_SERVICE_PORT}`, docsUrl: `http://localhost:${AUTH_SERVICE_PORT}/auth-service/api-docs/json` },
+  { name: 'Admin Service', slug: 'admin-service', prefix: '/admin-service', target: `http://localhost:${ADMIN_SERVICE_PORT}`, docsUrl: `http://localhost:${ADMIN_SERVICE_PORT}/admin-service/api-docs-json` },
+  { name: 'Freight Service', slug: 'freight-service', prefix: '/freight-service', target: `http://localhost:${FREIGHT_SERVICE_PORT}`, docsUrl: `http://localhost:${FREIGHT_SERVICE_PORT}/freight-service/api-docs-json` },
+  { name: 'Contacts Service', slug: 'contacts-service', prefix: '/contacts-service', target: `http://localhost:${CONTACTS_SERVICE_PORT}`, docsUrl: `http://localhost:${CONTACTS_SERVICE_PORT}/contacts-service/api-docs-json` },
+  { name: 'Books Service', slug: 'books-service', prefix: '/books-service', target: `http://localhost:${BOOKS_SERVICE_PORT}`, docsUrl: `http://localhost:${BOOKS_SERVICE_PORT}/books-service/api-docs-json` },
 ];
 
 async function fetchServiceDoc(service: typeof SERVICES[number]): Promise<any | null> {

@@ -1,17 +1,12 @@
 import { Injectable, CanActivate, ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { PERMISSION_KEY } from './permissions.decorator';
-import { PermissionCache } from './permission-cache';
 import { AbacEvaluator, AbacContext } from './abac-evaluator';
+import { getContextOrNull, RequestContext } from '../context/request-context';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
-  private authServiceUrl: string;
-
-  constructor(private reflector: Reflector) {
-    const port = process.env['AUTH_SERVICE_PORT'] || '3002';
-    this.authServiceUrl = `http://localhost:${port}/auth-service`;
-  }
+  constructor(private reflector: Reflector) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredPermission = this.reflector.getAllAndOverride<string>(PERMISSION_KEY, [
@@ -24,51 +19,35 @@ export class PermissionsGuard implements CanActivate {
     const user = request.user;
     if (!user) throw new ForbiddenException('No user context');
 
-    const userRoles: string[] = user?.realm_access?.roles || [];
-    if (userRoles.length === 0) throw new ForbiddenException('No roles assigned');
+    // Read from request object (set by ContextGuard) or AsyncLocalStorage fallback
+    const reqCtx: RequestContext | null = request.requestContext || getContextOrNull();
+    const permissions = reqCtx?.permissions ?? [];
 
-    let permissions = PermissionCache.get(userRoles);
-    if (!permissions) {
-      permissions = await this.fetchPermissions(userRoles);
-      PermissionCache.set(userRoles, permissions);
-    }
+    if (permissions.some((p) => p.key === '*')) return true;
 
     const matchedPerm = permissions.find((p) => p.key === requiredPermission);
     if (!matchedPerm) {
       throw new ForbiddenException(`Missing permission: ${requiredPermission}`);
     }
 
-    const abacContext: AbacContext = {
-      userId: user.sub || user.preferred_username || 'anonymous',
-      tenantId: user.tenant_id,
-      roles: userRoles,
-      department: user.department,
-    };
+    if (matchedPerm.conditions) {
+      const abacContext: AbacContext = {
+        userId: user.sub || user.preferred_username || 'anonymous',
+        tenantId: reqCtx?.tenantUid,
+        roles: user?.realm_access?.roles || [],
+        department: user.department,
+      };
 
-    const result = AbacEvaluator.evaluate(matchedPerm.conditions, abacContext, request.body);
-    if (!result.allowed) {
-      throw new ForbiddenException('ABAC conditions not met');
-    }
+      const result = AbacEvaluator.evaluate(matchedPerm.conditions, abacContext, request.body);
+      if (!result.allowed) {
+        throw new ForbiddenException('ABAC conditions not met');
+      }
 
-    if (result.filters) {
-      request.abacFilters = result.filters;
+      if (result.filters) {
+        request.abacFilters = result.filters;
+      }
     }
 
     return true;
-  }
-
-  private async fetchPermissions(roles: string[]): Promise<Array<{ key: string; conditions: Record<string, any> | null }>> {
-    try {
-      const url = `${this.authServiceUrl}/resolve-permissions?roles=${roles.join(',')}`;
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Auth service returned ${response.status}`);
-      }
-      const body: any = await response.json();
-      return body?.data?.permissions || [];
-    } catch (error) {
-      console.error('Failed to fetch permissions from auth-service:', error);
-      return [];
-    }
   }
 }

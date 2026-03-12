@@ -14,16 +14,20 @@
   "roles": {
     "realm": [
       {
-        "name": "admin",
-        "description": "Full administrative access to all resources"
+        "name": "sys_admin",
+        "description": "CargoEz system administrator with full platform access"
       },
       {
-        "name": "user",
-        "description": "Standard user access (read operations)"
+        "name": "tenant_admin",
+        "description": "Tenant administrator who manages their organization"
       },
       {
-        "name": "manager",
-        "description": "Manager-level access (read + write, no delete)"
+        "name": "app_customer",
+        "description": "Application customer (tenant staff/employee)"
+      },
+      {
+        "name": "branch_customer",
+        "description": "External branch customer (shipper, consignee, etc.)"
       }
     ]
   },
@@ -64,9 +68,53 @@
       ]
     },
     {
+      "clientId": "cargoez-admin",
+      "name": "CargoEz SysAdmin Portal",
+      "description": "Public client for the SysAdmin portal (admin.cargoez.com) using Authorization Code + PKCE",
+      "enabled": true,
+      "publicClient": true,
+      "directAccessGrantsEnabled": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "attributes": {
+        "pkce.code.challenge.method": "S256"
+      },
+      "redirectUris": [
+        "http://localhost:5177/*",
+        "https://admin.cargoez.com/*"
+      ],
+      "webOrigins": [
+        "http://localhost:5177",
+        "https://admin.cargoez.com"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-mapper",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "cargoez-api",
+            "id.token.claim": "false",
+            "lightweight.claim": "false",
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
+    },
+    {
       "clientId": "cargoez-web",
-      "name": "CargoEz Web Application",
-      "description": "Public client for frontend web apps using Authorization Code + PKCE",
+      "name": "CargoEz Tenant Portal",
+      "description": "Public client for the Tenant portal (app.cargoez.com) using Authorization Code + PKCE",
       "enabled": true,
       "publicClient": true,
       "directAccessGrantsEnabled": false,
@@ -82,9 +130,10 @@
         "http://localhost:5174/*",
         "http://localhost:5175/*",
         "http://localhost:5176/*",
-        "http://localhost:5177/*",
+        "http://localhost:5178/*",
         "http://localhost:4200/*",
-        "http://localhost:8100/*"
+        "http://localhost:8100/*",
+        "https://app.cargoez.com/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
@@ -92,9 +141,10 @@
         "http://localhost:5174",
         "http://localhost:5175",
         "http://localhost:5176",
-        "http://localhost:5177",
+        "http://localhost:5178",
         "http://localhost:4200",
-        "http://localhost:8100"
+        "http://localhost:8100",
+        "https://app.cargoez.com"
       ],
       "defaultClientScopes": [
         "web-origins",
@@ -184,10 +234,10 @@
   ],
   "users": [
     {
-      "username": "admin",
-      "email": "admin@cargoez.com",
-      "firstName": "Admin",
-      "lastName": "User",
+      "username": "sysadmin",
+      "email": "sysadmin@cargoez.com",
+      "firstName": "System",
+      "lastName": "Admin",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
@@ -197,39 +247,39 @@
           "temporary": false
         }
       ],
-      "realmRoles": ["admin", "user"]
+      "realmRoles": ["sys_admin"]
     },
     {
-      "username": "testuser",
-      "email": "testuser@cargoez.com",
-      "firstName": "Test",
+      "username": "demo-admin",
+      "email": "admin@demo.cargoez.com",
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "demo123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["tenant_admin", "app_customer"]
+    },
+    {
+      "username": "demo-user",
+      "email": "user@demo.cargoez.com",
+      "firstName": "Demo",
       "lastName": "User",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
         {
           "type": "password",
-          "value": "test123",
+          "value": "demo123",
           "temporary": false
         }
       ],
-      "realmRoles": ["user"]
-    },
-    {
-      "username": "manager",
-      "email": "manager@cargoez.com",
-      "firstName": "Manager",
-      "lastName": "User",
-      "enabled": true,
-      "emailVerified": true,
-      "credentials": [
-        {
-          "type": "password",
-          "value": "manager123",
-          "temporary": false
-        }
-      ],
-      "realmRoles": ["manager", "user"]
+      "realmRoles": ["app_customer"]
     }
   ]
 }

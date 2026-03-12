@@ -34,7 +34,10 @@ Pure TypeScript interfaces with zero runtime dependencies. This is the innermost
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `BaseEntity` | Interface | Common entity fields: `id`, `createdAt`, `modifiedAt`, `createdBy`, `modifiedBy`, `tenantId` |
+| `BaseEntity` | Interface | Common entity fields: `uid`, `tenant_uid`, `is_active`, `created_at`, `modified_at`, `created_by`, `modified_by` |
+| `RequestContext` | Interface | Request context shape (from `context/request-context.ts`): `requestId`, `userId`, `userEmail`, `keycloakSub`, `tenantUid`, `tenantCode`, `roles`, `permissions`, `tenantDbConfig` |
+| `getContext()` | Function | Get current request context (throws if none) |
+| `getContextOrNull()` | Function | Get current request context or `null` |
 | `IBaseRepository<T>` | Interface | Generic repository contract: `findAll`, `findById`, `save`, `update`, `delete` |
 | `PaginationOptions` | Interface | Query options: `page`, `limit`, `sortBy`, `sortOrder`, `search`, `searchFields` |
 | `PaginatedResult<T>` | Interface | Paginated response: `data[]` + `pagination { page, limit, total, totalPages }` |
@@ -60,12 +63,13 @@ export type IUserRepository = IBaseRepository<User>;
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | `string` | UUID primary key |
-| `createdAt` | `Date` | Row creation timestamp |
-| `modifiedAt` | `Date` | Last modification timestamp |
-| `createdBy` | `string?` | User ID who created (auto-populated from RequestContext) |
-| `modifiedBy` | `string?` | User ID who last modified (auto-populated from RequestContext) |
-| `tenantId` | `string?` | Tenant isolation ID (auto-populated from RequestContext) |
+| `uid` | `string` | UUID primary key |
+| `tenant_uid` | `string?` | Tenant isolation ID |
+| `is_active` | `boolean` | Soft-delete flag (default: true) |
+| `created_at` | `Date` | Row creation timestamp |
+| `modified_at` | `Date` | Last modification timestamp |
+| `created_by` | `string?` | User ID who created (auto-populated from RequestContext) |
+| `modified_by` | `string?` | User ID who last modified (auto-populated from RequestContext) |
 
 ---
 
@@ -136,7 +140,9 @@ NestJS database module that provides a configured Knex.js connection pool via de
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `DatabaseModule` | NestJS Module | `DatabaseModule.forRoot(options?)` — creates a global Knex provider |
+| `DatabaseModule` | NestJS Module | `DatabaseModule.forRoot(options?)` — creates a global Knex provider for admin-service |
+| `TenantDatabaseModule` | NestJS Module | `TenantDatabaseModule.forRoot()` — provides `TenantConnectionManager` for tenant services |
+| `TenantConnectionManager` | Class | Resolves and caches per-tenant Knex connections at runtime |
 | `DatabaseModuleOptions` | Interface | `{ connectionPrefix?, databaseEnvKey?, database? }` — per-service DB connection config |
 | `KNEX_CONNECTION` | DI Token | Injection token for the Knex instance |
 | `InjectKnex` | Decorator | `@InjectKnex()` — shorthand for `@Inject(KNEX_CONNECTION)` |
@@ -219,7 +225,8 @@ The top-level shared library. Provides all cross-cutting concerns: authenticatio
 
 | Export | Kind | Purpose |
 |---|---|---|
-| `BaseRepository<T>` | Class | Generic Knex-based repository with CRUD, pagination, search, auto audit fields (`createdBy`, `modifiedBy` from context), ABAC filter enforcement, auto domain event emission |
+| `BaseRepository<T>` | Class | Generic Knex-based repository for admin-service: CRUD, pagination, search, auto audit fields, ABAC filter enforcement, domain event emission |
+| `TenantBaseRepository<T>` | Class | Extends BaseRepository for tenant services: lazy tenant DB connection resolution via `TenantConnectionManager`, automatic `tenant_uid` scoping |
 
 ### Exports — Real-Time
 

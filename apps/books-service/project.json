@@ -1,0 +1,27 @@
+{
+  "name": "books-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/books-service/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/books-service",
+        "main": "apps/books-service/src/main.ts",
+        "tsConfig": "apps/books-service/tsconfig.app.json",
+        "rootDir": ".",
+        "assets": []
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node -r ./register-paths.js dist/apps/books-service/apps/books-service/src/main.js"
+      }
+    }
+  }
+}

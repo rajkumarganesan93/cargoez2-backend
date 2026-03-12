@@ -1,0 +1,55 @@
+{
+  "name": "admin-service",
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "sourceRoot": "apps/admin-service/src",
+  "projectType": "application",
+  "tags": [],
+  "targets": {
+    "build": {
+      "executor": "@nx/js:tsc",
+      "outputs": ["{options.outputPath}"],
+      "options": {
+        "outputPath": "dist/apps/admin-service",
+        "main": "apps/admin-service/src/main.ts",
+        "tsConfig": "apps/admin-service/tsconfig.app.json",
+        "rootDir": ".",
+        "assets": []
+      }
+    },
+    "serve": {
+      "executor": "nx:run-commands",
+      "dependsOn": ["build"],
+      "options": {
+        "command": "node -r ./register-paths.js dist/apps/admin-service/apps/admin-service/src/main.js"
+      }
+    },
+    "migrate": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --import tsx node_modules/.pnpm/knex@3.1.0_pg@8.19.0/node_modules/knex/bin/cli.js migrate:latest --knexfile apps/admin-service/knexfile.js",
+        "cwd": "."
+      }
+    },
+    "migrate-tenant": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --import tsx node_modules/.pnpm/knex@3.1.0_pg@8.19.0/node_modules/knex/bin/cli.js migrate:latest --knexfile apps/admin-service/knexfile.tenant.js",
+        "cwd": "."
+      }
+    },
+    "seed": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --import tsx node_modules/.pnpm/knex@3.1.0_pg@8.19.0/node_modules/knex/bin/cli.js seed:run --knexfile apps/admin-service/knexfile.js",
+        "cwd": "."
+      }
+    },
+    "seed-tenant": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "node --import tsx node_modules/.pnpm/knex@3.1.0_pg@8.19.0/node_modules/knex/bin/cli.js seed:run --knexfile apps/admin-service/knexfile.tenant.js",
+        "cwd": "."
+      }
+    }
+  }
+}
